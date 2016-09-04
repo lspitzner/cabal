@@ -66,53 +66,52 @@ readPkgConfigDb verbosity conf = handle ioErrorHandler $ do
   -- The output of @pkg-config --list-all@ also includes a description
   -- for each package, which we do not need.
   let pkgNames = map (takeWhile (not . isSpace)) pkgList
-  pkgVersions <- lines <$> getProgramOutput verbosity pkgConfig
-                             ("--modversion" : pkgNames)
+  pkgVersions <-
+    lines <$> getProgramOutput verbosity pkgConfig ("--modversion" : pkgNames)
   (return . pkgConfigDbFromList . zip pkgNames) pkgVersions
-      where
+  where
         -- For when pkg-config invocation fails (possibly because of a
         -- too long command line).
-        ioErrorHandler :: IOException -> IO PkgConfigDb
-        ioErrorHandler e = do
-          info verbosity ("Failed to query pkg-config, Cabal will continue"
-                          ++ " without solving for pkg-config constraints: "
-                          ++ show e)
-          return NoPkgConfigDb
+    ioErrorHandler :: IOException -> IO PkgConfigDb
+    ioErrorHandler e = do
+      info verbosity
+           (  "Failed to query pkg-config, Cabal will continue"
+           ++ " without solving for pkg-config constraints: "
+           ++ show e
+           )
+      return NoPkgConfigDb
 
 -- | Create a `PkgConfigDb` from a list of @(packageName, version)@ pairs.
 pkgConfigDbFromList :: [(String, String)] -> PkgConfigDb
 pkgConfigDbFromList pairs = (PkgConfigDb . M.fromList . map convert) pairs
-    where
-      convert :: (String, String) -> (PackageName, Maybe Version)
-      convert (n,vs) = (PackageName n,
-                        case (reverse . readP_to_S parseVersion) vs of
-                          (v, "") : _ -> Just v
-                          _           -> Nothing -- Version not (fully)
-                                                 -- understood.
-                       )
+  where
+    convert :: (String, String) -> (PackageName, Maybe Version)
+    convert (n, vs) =
+      (PackageName n, case (reverse . readP_to_S parseVersion) vs of
+        (v, ""):_ -> Just v
+        _         -> Nothing) -- Version not (fully)
+                                               -- understood.
 
 -- | Check whether a given package range is satisfiable in the given
 -- @pkg-config@ database.
 pkgConfigPkgIsPresent :: PkgConfigDb -> PackageName -> VersionRange -> Bool
-pkgConfigPkgIsPresent (PkgConfigDb db) pn vr =
-    case M.lookup pn db of
-      Nothing       -> False    -- Package not present in the DB.
-      Just Nothing  -> True     -- Package present, but version unknown.
-      Just (Just v) -> withinRange v vr
+pkgConfigPkgIsPresent (PkgConfigDb db) pn vr = case M.lookup pn db of
+  Nothing       -> False    -- Package not present in the DB.
+  Just Nothing  -> True     -- Package present, but version unknown.
+  Just (Just v) -> withinRange v vr
 -- If we could not read the pkg-config database successfully we allow
 -- the check to succeed. The plan found by the solver may fail to be
 -- executed later on, but we have no grounds for rejecting the plan at
 -- this stage.
-pkgConfigPkgIsPresent NoPkgConfigDb _ _ = True
+pkgConfigPkgIsPresent NoPkgConfigDb    _  _  = True
 
 
 -- | Query pkg-config for the locations of pkg-config's package files. Use this
 -- to monitor for changes in the pkg-config DB.
 --
 getPkgConfigDbDirs :: Verbosity -> ProgramConfiguration -> IO [FilePath]
-getPkgConfigDbDirs verbosity conf =
-    (++) <$> getEnvPath <*> getDefPath
- where
+getPkgConfigDbDirs verbosity conf = (++) <$> getEnvPath <*> getDefPath
+  where
     -- According to @man pkg-config@:
     --
     -- PKG_CONFIG_PATH
@@ -120,8 +119,7 @@ getPkgConfigDbDirs verbosity conf =
     -- to search for .pc files.  The default directory will always be searched
     -- after searching the path
     --
-    getEnvPath = maybe [] parseSearchPath
-             <$> lookupEnv "PKG_CONFIG_PATH"
+    getEnvPath = maybe [] parseSearchPath <$> lookupEnv "PKG_CONFIG_PATH"
 
     -- Again according to @man pkg-config@:
     --
@@ -132,14 +130,16 @@ getPkgConfigDbDirs verbosity conf =
     --
     getDefPath = handle ioErrorHandler $ do
       (pkgConfig, _) <- requireProgram verbosity pkgConfigProgram conf
-      parseSearchPath <$>
-        getProgramOutput verbosity pkgConfig
-                         ["--variable", "pc_path", "pkg-config"]
+      parseSearchPath <$> getProgramOutput verbosity
+                                           pkgConfig
+                                           [ "--variable"
+                                           , "pc_path"
+                                           , "pkg-config"
+                                           ]
 
-    parseSearchPath str =
-      case lines str of
-        [p] | not (null p) -> splitSearchPath p
-        _                  -> []
+    parseSearchPath str = case lines str of
+      [p] | not (null p) -> splitSearchPath p
+      _                  -> []
 
     ioErrorHandler :: IOException -> IO [FilePath]
     ioErrorHandler _e = return []

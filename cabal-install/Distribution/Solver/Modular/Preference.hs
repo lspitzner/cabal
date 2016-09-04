@@ -49,13 +49,16 @@ import qualified Distribution.Solver.Modular.ConflictSet as CS
 
 -- | Generic abstraction for strategies that just rearrange the package order.
 -- Only packages that match the given predicate are reordered.
-packageOrderFor :: (PN -> Bool) -> (PN -> I -> I -> Ordering) -> Tree a -> Tree a
+packageOrderFor
+  :: (PN -> Bool) -> (PN -> I -> I -> Ordering) -> Tree a -> Tree a
 packageOrderFor p cmp' = trav go
   where
     go (PChoiceF v@(Q _ pn) r cs)
-      | p pn                        = PChoiceF v r (P.sortByKeys (flip (cmp pn)) cs)
-      | otherwise                   = PChoiceF v r                               cs
-    go x                            = x
+      | p pn
+      = PChoiceF v r (P.sortByKeys (flip (cmp pn)) cs)
+      | otherwise
+      = PChoiceF v r cs
+    go x = x
 
     cmp :: PN -> POption -> POption -> Ordering
     cmp pn (POption i _) (POption i' _) = cmp' pn i i'
@@ -64,8 +67,8 @@ packageOrderFor p cmp' = trav go
 preferLinked :: Tree a -> Tree a
 preferLinked = trav go
   where
-    go (PChoiceF qn a  cs) = PChoiceF qn a (P.sortByKeys cmp cs)
-    go x                   = x
+    go (PChoiceF qn a cs) = PChoiceF qn a (P.sortByKeys cmp cs)
+    go x                  = x
 
     cmp (POption _ linkedTo) (POption _ linkedTo') = cmpL linkedTo linkedTo'
 
@@ -79,19 +82,23 @@ preferLinked = trav go
 preferredVersionsOrdering :: [VR] -> Ver -> Ver -> Ordering
 preferredVersionsOrdering vrs v1 v2 = compare (check v1) (check v2)
   where
-     check v = Prelude.length . Prelude.filter (==True) .
-               Prelude.map (flip checkVR v) $ vrs
+    check v
+      = Prelude.length
+      . Prelude.filter (==True)
+      . Prelude.map (flip checkVR v)
+      $ vrs
 
 -- | Traversal that tries to establish package preferences (not constraints).
 -- Works by reordering choice nodes. Also applies stanza preferences.
 preferPackagePreferences :: (PN -> PackagePreferences) -> Tree a -> Tree a
-preferPackagePreferences pcs = preferPackageStanzaPreferences pcs
-                             . packageOrderFor (const True) preference
+preferPackagePreferences pcs =
+  preferPackageStanzaPreferences pcs . packageOrderFor (const True) preference
   where
     preference pn i1@(I v1 _) i2@(I v2 _) =
       let PackagePreferences vrs ipref _ = pcs pn
-      in  preferredVersionsOrdering vrs v1 v2 `mappend` -- combines lexically
-          locationsOrdering ipref i1 i2
+      in  preferredVersionsOrdering vrs v1 v2
+            `mappend` -- combines lexically
+                      locationsOrdering ipref i1 i2
 
     -- Note that we always rank installed before uninstalled, and later
     -- versions before earlier, but we can change the priority of the
@@ -117,109 +124,122 @@ preferLatestOrdering (I v1 _) (I v2 _) = compare v1 v2
 preferPackageStanzaPreferences :: (PN -> PackagePreferences) -> Tree a -> Tree a
 preferPackageStanzaPreferences pcs = trav go
   where
-    go (SChoiceF qsn@(SN (PI (Q pp pn) _) s) gr _tr ts)
-      | primaryPP pp && enableStanzaPref pn s =
+    go (SChoiceF qsn@(SN (PI (Q pp pn) _) s) gr _tr ts) | primaryPP pp
+      && enableStanzaPref pn s =
           -- move True case first to try enabling the stanza
-          let ts' = P.sortByKeys (flip compare) ts
-          -- defer the choice by setting it to weak
-          in  SChoiceF qsn gr (WeakOrTrivial True) ts'
+      let ts' = P.sortByKeys (flip compare) ts
+      in  SChoiceF qsn gr (WeakOrTrivial True) ts'
+    -- defer the choice by setting it to weak
     go x = x
 
     enableStanzaPref :: PN -> OptionalStanza -> Bool
     enableStanzaPref pn s =
-      let PackagePreferences _ _ spref = pcs pn
-      in  s `elem` spref
+      let PackagePreferences _ _ spref = pcs pn in s `elem` spref
 
 -- | Helper function that tries to enforce a single package constraint on a
 -- given instance for a P-node. Translates the constraint into a
 -- tree-transformer that either leaves the subtree untouched, or replaces it
 -- with an appropriate failure node.
-processPackageConstraintP :: PackagePath
-                          -> ConflictSet QPN
-                          -> I
-                          -> LabeledPackageConstraint
-                          -> Tree a
-                          -> Tree a
+processPackageConstraintP
+  :: PackagePath
+  -> ConflictSet QPN
+  -> I
+  -> LabeledPackageConstraint
+  -> Tree a
+  -> Tree a
 processPackageConstraintP pp _ _ (LabeledPackageConstraint _ src) r
-  | src == ConstraintSourceUserTarget && not (primaryPP pp)         = r
+  | src == ConstraintSourceUserTarget && not (primaryPP pp)
+  = r
     -- the constraints arising from targets, like "foo-1.0" only apply to
     -- the main packages in the solution, they don't constrain setup deps
 
 processPackageConstraintP _ c i (LabeledPackageConstraint pc src) r = go i pc
   where
     go (I v _) (PackageConstraintVersion _ vr)
-        | checkVR vr v  = r
-        | otherwise     = Fail c (GlobalConstraintVersion vr src)
-    go _       (PackageConstraintInstalled _)
-        | instI i       = r
-        | otherwise     = Fail c (GlobalConstraintInstalled src)
-    go _       (PackageConstraintSource    _)
-        | not (instI i) = r
-        | otherwise     = Fail c (GlobalConstraintSource src)
-    go _       _ = r
+      | checkVR vr v
+      = r
+      | otherwise
+      = Fail c (GlobalConstraintVersion vr src)
+    go _       (PackageConstraintInstalled _ )
+      | instI i
+      = r
+      | otherwise
+      = Fail c (GlobalConstraintInstalled src)
+    go _       (PackageConstraintSource    _ )
+      | not (instI i)
+      = r
+      | otherwise
+      = Fail c (GlobalConstraintSource src)
+    go _ _ = r
 
 -- | Helper function that tries to enforce a single package constraint on a
 -- given flag setting for an F-node. Translates the constraint into a
 -- tree-transformer that either leaves the subtree untouched, or replaces it
 -- with an appropriate failure node.
-processPackageConstraintF :: Flag
-                          -> ConflictSet QPN
-                          -> Bool
-                          -> LabeledPackageConstraint
-                          -> Tree a
-                          -> Tree a
+processPackageConstraintF
+  :: Flag
+  -> ConflictSet QPN
+  -> Bool
+  -> LabeledPackageConstraint
+  -> Tree a
+  -> Tree a
 processPackageConstraintF f c b' (LabeledPackageConstraint pc src) r = go pc
   where
-    go (PackageConstraintFlags _ fa) =
-        case L.lookup f fa of
-          Nothing            -> r
-          Just b | b == b'   -> r
-                 | otherwise -> Fail c (GlobalConstraintFlag src)
+    go (PackageConstraintFlags _ fa) = case L.lookup f fa of
+      Nothing -> r
+      Just b
+        | b == b'
+        -> r
+        | otherwise
+        -> Fail c (GlobalConstraintFlag src)
     go _                             = r
 
 -- | Helper function that tries to enforce a single package constraint on a
 -- given flag setting for an F-node. Translates the constraint into a
 -- tree-transformer that either leaves the subtree untouched, or replaces it
 -- with an appropriate failure node.
-processPackageConstraintS :: OptionalStanza
-                          -> ConflictSet QPN
-                          -> Bool
-                          -> LabeledPackageConstraint
-                          -> Tree a
-                          -> Tree a
+processPackageConstraintS
+  :: OptionalStanza
+  -> ConflictSet QPN
+  -> Bool
+  -> LabeledPackageConstraint
+  -> Tree a
+  -> Tree a
 processPackageConstraintS s c b' (LabeledPackageConstraint pc src) r = go pc
   where
     go (PackageConstraintStanzas _ ss) =
-        if not b' && s `elem` ss then Fail c (GlobalConstraintFlag src)
-                                 else r
-    go _                               = r
+      if not b' && s `elem` ss then Fail c (GlobalConstraintFlag src) else r
+    go _ = r
 
 -- | Traversal that tries to establish various kinds of user constraints. Works
 -- by selectively disabling choices that have been ruled out by global user
 -- constraints.
-enforcePackageConstraints :: M.Map PN [LabeledPackageConstraint]
-                          -> Tree a
-                          -> Tree a
+enforcePackageConstraints
+  :: M.Map PN [LabeledPackageConstraint] -> Tree a -> Tree a
 enforcePackageConstraints pcs = trav go
   where
-    go (PChoiceF qpn@(Q pp pn)              gr      ts) =
+    go (PChoiceF qpn@(Q pp pn) gr ts) =
       let c = varToConflictSet (P qpn)
           -- compose the transformation functions for each of the relevant constraint
-          g = \ (POption i _) -> foldl (\ h pc -> h . processPackageConstraintP pp c i pc) id
-                           (M.findWithDefault [] pn pcs)
-      in PChoiceF qpn gr      (P.mapWithKey g ts)
+          g = \(POption i _) -> foldl
+            (\h pc -> h . processPackageConstraintP pp c i pc)
+            id
+            (M.findWithDefault [] pn pcs)
+      in  PChoiceF qpn gr (P.mapWithKey g ts)
     go (FChoiceF qfn@(FN (PI (Q _ pn) _) f) gr tr m ts) =
       let c = varToConflictSet (F qfn)
           -- compose the transformation functions for each of the relevant constraint
-          g = \ b -> foldl (\ h pc -> h . processPackageConstraintF f c b pc) id
-                           (M.findWithDefault [] pn pcs)
-      in FChoiceF qfn gr tr m (P.mapWithKey g ts)
-    go (SChoiceF qsn@(SN (PI (Q _ pn) _) f) gr tr   ts) =
+          g = \b -> foldl (\h pc -> h . processPackageConstraintF f c b pc)
+                          id
+                          (M.findWithDefault [] pn pcs)
+      in  FChoiceF qfn gr tr m (P.mapWithKey g ts)
+    go (SChoiceF qsn@(SN (PI (Q _ pn) _) f) gr tr ts) =
       let c = varToConflictSet (S qsn)
           -- compose the transformation functions for each of the relevant constraint
-          g = \ b -> foldl (\ h pc -> h . processPackageConstraintS f c b pc) id
-                           (M.findWithDefault [] pn pcs)
-      in SChoiceF qsn gr tr   (P.mapWithKey g ts)
+          g = \b -> foldl (\h pc -> h . processPackageConstraintS f c b pc)
+                          id
+                          (M.findWithDefault [] pn pcs)
+      in  SChoiceF qsn gr tr (P.mapWithKey g ts)
     go x = x
 
 -- | Transformation that tries to enforce manual flags. Manual flags
@@ -230,27 +250,33 @@ enforcePackageConstraints pcs = trav go
 enforceManualFlags :: Tree a -> Tree a
 enforceManualFlags = trav go
   where
-    go (FChoiceF qfn gr tr True ts) = FChoiceF qfn gr tr True $
-      let c = varToConflictSet (F qfn)
-      in  case span isDisabled (P.toList ts) of
-            ([], y : ys) -> P.fromList (y : L.map (\ (b, _) -> (b, Fail c ManualFlag)) ys)
-            _            -> ts -- something has been manually selected, leave things alone
+    go (FChoiceF qfn gr tr True ts) =
+      FChoiceF qfn gr tr True
+        $ let
+            c = varToConflictSet (F qfn)
+          in
+            case span isDisabled (P.toList ts) of
+              ([], y:ys) ->
+                P.fromList (y : L.map (\(b, _) -> (b, Fail c ManualFlag)) ys)
+              _ -> ts -- something has been manually selected, leave things alone
       where
         isDisabled (_, Fail _ (GlobalConstraintFlag _)) = True
         isDisabled _                                    = False
-    go x                                                   = x
+    go x = x
 
 -- | Require installed packages.
 requireInstalled :: (PN -> Bool) -> Tree a -> Tree a
 requireInstalled p = trav go
   where
     go (PChoiceF v@(Q _ pn) gr cs)
-      | p pn      = PChoiceF v gr (P.mapWithKey installed cs)
-      | otherwise = PChoiceF v gr                         cs
+      | p pn
+      = PChoiceF v gr (P.mapWithKey installed cs)
+      | otherwise
+      = PChoiceF v gr cs
       where
         installed (POption (I _ (Inst _)) _) x = x
         installed _ _ = Fail (varToConflictSet (P v)) CannotInstall
-    go x          = x
+    go x = x
 
 -- | Avoid reinstalls.
 --
@@ -269,8 +295,10 @@ avoidReinstalls :: (PN -> Bool) -> Tree a -> Tree a
 avoidReinstalls p = trav go
   where
     go (PChoiceF qpn@(Q _ pn) gr cs)
-      | p pn      = PChoiceF qpn gr disableReinstalls
-      | otherwise = PChoiceF qpn gr cs
+      | p pn
+      = PChoiceF qpn gr disableReinstalls
+      | otherwise
+      = PChoiceF qpn gr cs
       where
         disableReinstalls =
           let installed = [ v | (POption (I v (Inst _)) _, _) <- P.toList cs ]
@@ -278,9 +306,8 @@ avoidReinstalls p = trav go
 
         notReinstall vs (POption (I v InRepo) _) _ | v `elem` vs =
           Fail (varToConflictSet (P qpn)) CannotReinstall
-        notReinstall _ _ x =
-          x
-    go x          = x
+        notReinstall _ _ x = x
+    go x = x
 
 -- | Sort all goals using the provided function.
 sortGoals :: (Variable QPN -> Variable QPN -> Ordering) -> Tree a -> Tree a
@@ -293,8 +320,8 @@ sortGoals variableOrder = trav go
     goalOrder = variableOrder `on` (varToVariable . goalToVar)
 
     varToVariable :: Var QPN -> Variable QPN
-    varToVariable (P qpn)                    = PackageVar qpn
-    varToVariable (F (FN (PI qpn _) fn))     = FlagVar qpn fn
+    varToVariable (P qpn                   ) = PackageVar qpn
+    varToVariable (F (FN (PI qpn _) fn    )) = FlagVar qpn fn
     varToVariable (S (SN (PI qpn _) stanza)) = StanzaVar qpn stanza
 
 -- | Always choose the first goal in the list next, abandoning all
@@ -341,8 +368,9 @@ deferSetupChoices = trav go
 deferWeakFlagChoices :: Tree a -> Tree a
 deferWeakFlagChoices = trav go
   where
-    go (GoalChoiceF xs) = GoalChoiceF (P.prefer noWeakStanza (P.prefer noWeakFlag xs))
-    go x                = x
+    go (GoalChoiceF xs) =
+      GoalChoiceF (P.prefer noWeakStanza (P.prefer noWeakFlag xs))
+    go x = x
 
     noWeakStanza :: Tree a -> Bool
     noWeakStanza (SChoice _ _ (WeakOrTrivial True) _) = False
@@ -402,15 +430,14 @@ type EnforceSIR = Reader (Map (PI PN) QPN)
 -- goal resolving to that instance (there may be other goals _linking_ to that
 -- instance however).
 enforceSingleInstanceRestriction :: Tree a -> Tree a
-enforceSingleInstanceRestriction = (`runReader` M.empty) . cata go
+enforceSingleInstanceRestriction = (`runReader`M.empty) . cata go
   where
     go :: TreeF a (EnforceSIR (Tree a)) -> EnforceSIR (Tree a)
 
     -- We just verify package choices.
     go (PChoiceF qpn gr cs) =
       PChoice qpn gr <$> sequence (P.mapWithKey (goP qpn) cs)
-    go _otherwise =
-      innM _otherwise
+    go _otherwise = innM _otherwise
 
     -- The check proper
     goP :: QPN -> POption -> EnforceSIR (Tree a) -> EnforceSIR (Tree a)
@@ -418,12 +445,14 @@ enforceSingleInstanceRestriction = (`runReader` M.empty) . cata go
       let inst = PI pn i
       env <- ask
       case (linkedTo, M.lookup inst env) of
-        (Just _, _) ->
+        (Just _ , _        ) ->
           -- For linked nodes we don't check anything
-          r
-        (Nothing, Nothing) ->
+                                r
+        (Nothing, Nothing  ) ->
           -- Not linked, not already used
-          local (M.insert inst qpn) r
+                                local (M.insert inst qpn) r
         (Nothing, Just qpn') -> do
           -- Not linked, already used. This is an error
-          return $ Fail (CS.union (varToConflictSet (P qpn)) (varToConflictSet (P qpn'))) MultipleInstances
+          return $ Fail
+            (CS.union (varToConflictSet (P qpn)) (varToConflictSet (P qpn')))
+            MultipleInstances

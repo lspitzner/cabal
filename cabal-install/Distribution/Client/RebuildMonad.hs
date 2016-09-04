@@ -99,38 +99,46 @@ askRoot = Rebuild Reader.ask
 --
 -- Do not share 'FileMonitor's between different uses of 'rerunIfChanged'.
 --
-rerunIfChanged :: (Binary a, Binary b)
-               => Verbosity
-               -> FileMonitor a b
-               -> a
-               -> Rebuild b
-               -> Rebuild b
+rerunIfChanged
+  :: (Binary a, Binary b)
+  => Verbosity
+  -> FileMonitor a b
+  -> a
+  -> Rebuild b
+  -> Rebuild b
 rerunIfChanged verbosity monitor key action = do
-    rootDir <- askRoot
-    changed <- liftIO $ checkFileMonitorChanged monitor rootDir key
-    case changed of
-      MonitorUnchanged result files -> do
-        liftIO $ debug verbosity $ "File monitor '" ++ monitorName
-                                                    ++ "' unchanged."
-        monitorFiles files
-        return result
+  rootDir <- askRoot
+  changed <- liftIO $ checkFileMonitorChanged monitor rootDir key
+  case changed of
+    MonitorUnchanged result files -> do
+      liftIO
+        $  debug verbosity
+        $  "File monitor '"
+        ++ monitorName
+        ++ "' unchanged."
+      monitorFiles files
+      return result
 
-      MonitorChanged reason -> do
-        liftIO $ debug verbosity $ "File monitor '" ++ monitorName
-                                ++ "' changed: " ++ showReason reason
-        startTime <- liftIO $ beginUpdateFileMonitor
-        (result, files) <- liftIO $ unRebuild rootDir action
-        liftIO $ updateFileMonitor monitor rootDir
-                                   (Just startTime) files key result
-        monitorFiles files
-        return result
+    MonitorChanged reason         -> do
+      liftIO
+        $  debug verbosity
+        $  "File monitor '"
+        ++ monitorName
+        ++ "' changed: "
+        ++ showReason reason
+      startTime       <- liftIO $ beginUpdateFileMonitor
+      (result, files) <- liftIO $ unRebuild rootDir action
+      liftIO
+        $ updateFileMonitor monitor rootDir (Just startTime) files key result
+      monitorFiles files
+      return result
   where
     monitorName = takeFileName (fileMonitorCacheFile monitor)
 
-    showReason (MonitoredFileChanged file) = "file " ++ file
-    showReason (MonitoredValueChanged _)   = "monitor value changed"
-    showReason  MonitorFirstRun            = "first run"
-    showReason  MonitorCorruptCache        = "invalid cache file"
+    showReason (MonitoredFileChanged  file) = "file " ++ file
+    showReason (MonitoredValueChanged _   ) = "monitor value changed"
+    showReason MonitorFirstRun              = "first run"
+    showReason MonitorCorruptCache          = "invalid cache file"
 
 
 -- | Utility to match a file glob against the file system, starting from a
@@ -141,7 +149,7 @@ rerunIfChanged verbosity monitor key action = do
 --
 matchFileGlob :: FilePathGlob -> Rebuild [FilePath]
 matchFileGlob glob = do
-    root <- askRoot
-    monitorFiles [monitorFileGlobExistence glob]
-    liftIO $ Glob.matchFileGlob root glob
+  root <- askRoot
+  monitorFiles [monitorFileGlobExistence glob]
+  liftIO $ Glob.matchFileGlob root glob
 

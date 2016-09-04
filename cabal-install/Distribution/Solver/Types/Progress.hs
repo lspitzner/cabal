@@ -35,12 +35,17 @@ data Progress step fail done = Step step (Progress step fail done)
 --
 -- > foldProgress (flip const) Left Right
 --
-foldProgress :: (step -> a -> a) -> (fail -> a) -> (done -> a)
-             -> Progress step fail done -> a
+foldProgress
+  :: (step -> a -> a)
+  -> (fail -> a)
+  -> (done -> a)
+  -> Progress step fail done
+  -> a
 foldProgress step fail done = fold
-  where fold (Step s p) = step s (fold p)
-        fold (Fail f)   = fail f
-        fold (Done r)   = done r
+  where
+    fold (Step s p) = step s (fold p)
+    fold (Fail f  ) = fail f
+    fold (Done r  ) = done r
 
 instance Monad (Progress step fail) where
   return   = pure

@@ -81,18 +81,17 @@ data CabalDirLayout = CabalDirLayout {
 
 
 defaultDistDirLayout :: FilePath -> DistDirLayout
-defaultDistDirLayout projectRootDirectory =
-    DistDirLayout {..}
+defaultDistDirLayout projectRootDirectory = DistDirLayout {..}
   where
-    distDirectory = projectRootDirectory </> "dist-newstyle"
+    distDirectory          = projectRootDirectory </> "dist-newstyle"
     --TODO: switch to just dist at some point, or some other new name
 
-    distBuildRootDirectory   = distDirectory </> "build"
+    distBuildRootDirectory = distDirectory </> "build"
     distBuildDirectory pkgid = distBuildRootDirectory </> display pkgid
 
-    distUnpackedSrcRootDirectory   = distDirectory </> "src"
-    distUnpackedSrcDirectory pkgid = distUnpackedSrcRootDirectory
-                                      </> display pkgid
+    distUnpackedSrcRootDirectory = distDirectory </> "src"
+    distUnpackedSrcDirectory pkgid =
+      distUnpackedSrcRootDirectory </> display pkgid
 
     distProjectCacheDirectory = distDirectory </> "cache"
     distProjectCacheFile name = distProjectCacheDirectory </> name
@@ -102,7 +101,7 @@ defaultDistDirLayout projectRootDirectory =
 
     distTempDirectory = distDirectory </> "tmp"
 
-    distBinDirectory = distDirectory </> "bin"
+    distBinDirectory  = distDirectory </> "bin"
 
     distPackageDBPath compid = distDirectory </> "packagedb" </> display compid
     distPackageDB = SpecificPackageDB . distPackageDBPath
@@ -110,25 +109,21 @@ defaultDistDirLayout projectRootDirectory =
 
 
 defaultCabalDirLayout :: FilePath -> CabalDirLayout
-defaultCabalDirLayout cabalDir =
-    CabalDirLayout {..}
+defaultCabalDirLayout cabalDir = CabalDirLayout {..}
   where
 
-    cabalStoreDirectory compid =
-      cabalDir </> "store" </> display compid
+    cabalStoreDirectory compid = cabalDir </> "store" </> display compid
 
-    cabalStorePackageDirectory compid ipkgid = 
+    cabalStorePackageDirectory compid ipkgid =
       cabalStoreDirectory compid </> display ipkgid
 
-    cabalStorePackageDBPath compid =
-      cabalStoreDirectory compid </> "package.db"
+    cabalStorePackageDBPath compid = cabalStoreDirectory compid </> "package.db"
 
-    cabalStorePackageDB =
-      SpecificPackageDB . cabalStorePackageDBPath
+    cabalStorePackageDB        = SpecificPackageDB . cabalStorePackageDBPath
 
     cabalPackageCacheDirectory = cabalDir </> "packages"
 
-    cabalLogsDirectory = cabalDir </> "logs"
+    cabalLogsDirectory         = cabalDir </> "logs"
 
-    cabalWorldFile = cabalDir </> "world"
+    cabalWorldFile             = cabalDir </> "world"
 

@@ -37,52 +37,48 @@ type Edge  e = (Vertex, e, Vertex)
 -- | Construct an edge-labeled graph
 --
 -- This is a simple adaptation of the definition in Data.Graph
-graphFromEdges :: forall key node edge. Ord key
-               => [ (node, key, [(edge, key)]) ]
-               -> ( Graph edge
-                  , Vertex -> (node, key, [(edge, key)])
-                  , key -> Maybe Vertex
-                  )
-graphFromEdges edges0 =
-    (graph, \v -> vertex_map ! v, key_vertex)
+graphFromEdges
+  :: forall key node edge . Ord key => [(node, key, [(edge, key)])]
+     -> (Graph edge, Vertex -> (node, key, [(edge, key)]), key -> Maybe Vertex)
+graphFromEdges edges0 = (graph, \v -> vertex_map ! v, key_vertex)
   where
     max_v        = length edges0 - 1
     bounds0      = (0, max_v) :: (Vertex, Vertex)
     sorted_edges = sortBy lt edges0
-    edges1       = zipWith (,) [0..] sorted_edges
+    edges1       = zipWith (,) [0 ..] sorted_edges
 
-    graph        = array bounds0 [(v, (mapMaybe mk_edge ks))
-                                 | (v, (_, _, ks)) <- edges1]
-    key_map      = array bounds0 [(v, k                    )
-                                 | (v, (_, k, _ )) <- edges1]
-    vertex_map   = array bounds0 edges1
+    graph =
+      array bounds0 [ (v, (mapMaybe mk_edge ks)) | (v, (_, _, ks)) <- edges1 ]
+    key_map    = array bounds0 [ (v, k) | (v, (_, k, _)) <- edges1 ]
+    vertex_map = array bounds0 edges1
 
-    (_,k1,_) `lt` (_,k2,_) = k1 `compare` k2
+    (_, k1, _) `lt` (_, k2, _) = k1 `compare` k2
 
     mk_edge :: (edge, key) -> Maybe (edge, Vertex)
-    mk_edge (edge, key) = do v <- key_vertex key ; return (edge, v)
+    mk_edge (edge, key) = do
+      v <- key_vertex key
+      return (edge, v)
 
     --  returns Nothing for non-interesting vertices
     key_vertex :: key -> Maybe Vertex
     key_vertex k = findVertex 0 max_v
       where
         findVertex a b
-          | a > b     = Nothing
-          | otherwise = case compare k (key_map ! mid) of
-              LT -> findVertex a (mid-1)
-              EQ -> Just mid
-              GT -> findVertex (mid+1) b
+          | a > b
+          = Nothing
+          | otherwise
+          = case compare k (key_map ! mid) of
+            LT -> findVertex a (mid - 1)
+            EQ -> Just mid
+            GT -> findVertex (mid + 1) b
           where
             mid = a + (b - a) `div` 2
 
-graphFromEdges' :: Ord key
-                => [ (node, key, [(edge, key)]) ]
-                -> ( Graph edge
-                   , Vertex -> (node, key, [(edge, key)])
-                   )
-graphFromEdges' x = (a,b)
-  where
-    (a,b,_) = graphFromEdges x
+graphFromEdges'
+  :: Ord key
+  => [(node, key, [(edge, key)])]
+  -> (Graph edge, Vertex -> (node, key, [(edge, key)]))
+graphFromEdges' x = (a, b) where (a, b, _) = graphFromEdges x
 
 transposeG :: Graph e -> Graph e
 transposeG g = buildG (bounds g) (reverseE g)
@@ -103,7 +99,7 @@ vertices :: Graph e -> [Vertex]
 vertices = indices
 
 edges :: Graph e -> [Edge e]
-edges g = [ (v, e, w) | v <- vertices g, (e, w) <- g!v ]
+edges g = [ (v, e, w) | v <- vertices g, (e, w) <- g ! v ]
 
 {-------------------------------------------------------------------------------
   Operations on the underlying unlabelled graph

@@ -23,20 +23,16 @@ import           Distribution.Solver.Types.SourcePackage
 -- | Converts from the solver specific result @CP QPN@ into
 -- a 'ResolverPackage', which can then be converted into
 -- the install plan.
-convCP :: SI.InstalledPackageIndex ->
-          CI.PackageIndex (SourcePackage loc) ->
-          CP QPN -> ResolverPackage loc
-convCP iidx sidx (CP qpi fa es ds) =
-  case convPI qpi of
-    Left  pi -> PreExisting
-                  (fromJust $ SI.lookupUnitId iidx pi) ds'
-    Right pi -> Configured $ SolverPackage
-                  srcpkg
-                  fa
-                  es
-                  ds'
-      where
-        Just srcpkg = CI.lookupPackageId sidx pi
+convCP
+  :: SI.InstalledPackageIndex
+  -> CI.PackageIndex (SourcePackage loc)
+  -> CP QPN
+  -> ResolverPackage loc
+convCP iidx sidx (CP qpi fa es ds) = case convPI qpi of
+  Left  pi -> PreExisting (fromJust $ SI.lookupUnitId iidx pi) ds'
+  Right pi -> Configured $ SolverPackage srcpkg fa es ds'
+    where
+      Just srcpkg = CI.lookupPackageId sidx pi
   where
     ds' :: ComponentDeps [SolverId]
     ds' = fmap (map convConfId) ds
@@ -46,9 +42,8 @@ convPI (PI _ (I _ (Inst pi))) = Left pi
 convPI pi                     = Right (packageId (convConfId pi))
 
 convConfId :: PI QPN -> SolverId
-convConfId (PI (Q _ pn) (I v loc)) =
-    case loc of
-        Inst pi -> PreExistingId sourceId pi
-        _otherwise -> PlannedId sourceId
+convConfId (PI (Q _ pn) (I v loc)) = case loc of
+  Inst pi    -> PreExistingId sourceId pi
+  _otherwise -> PlannedId sourceId
   where
-    sourceId    = PackageIdentifier pn v
+    sourceId = PackageIdentifier pn v

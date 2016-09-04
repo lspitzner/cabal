@@ -25,24 +25,24 @@ import Distribution.Verbosity
 -- For more details on how this works, see the module
 -- "Distribution.Client.ProjectOrchestration"
 --
-configureAction :: (ConfigFlags, ConfigExFlags, InstallFlags, HaddockFlags)
-                -> [String] -> GlobalFlags -> IO ()
-configureAction (configFlags, configExFlags, installFlags, haddockFlags)
-                _extraArgs globalFlags = do
+configureAction
+  :: (ConfigFlags, ConfigExFlags, InstallFlags, HaddockFlags)
+  -> [String]
+  -> GlobalFlags
+  -> IO ()
+configureAction (configFlags, configExFlags, installFlags, haddockFlags) _extraArgs globalFlags
+  = do
     --TODO: deal with _extraArgs, since flags with wrong syntax end up there
 
-    buildCtx <-
-      runProjectPreBuildPhase
-        verbosity
-        ( globalFlags, configFlags, configExFlags
-        , installFlags, haddockFlags )
-        PreBuildHooks {
-          hookPrePlanning = \projectRootDir _ cliConfig ->
+    buildCtx <- runProjectPreBuildPhase
+      verbosity
+      (globalFlags, configFlags, configExFlags, installFlags, haddockFlags)
+      PreBuildHooks
+        { hookPrePlanning      = \projectRootDir _ cliConfig ->
             -- Write out the @cabal.project.local@ so it gets picked up by the
             -- planning phase.
-            writeProjectLocalExtraConfig projectRootDir cliConfig,
-
-          hookSelectPlanSubset = return
+          writeProjectLocalExtraConfig projectRootDir cliConfig
+        , hookSelectPlanSubset = return
         }
 
     --TODO: Hmm, but we don't have any targets. Currently this prints what we
@@ -50,11 +50,9 @@ configureAction (configFlags, configExFlags, installFlags, haddockFlags)
     --TODO: should we say what's in the project (+deps) as a whole?
     printPlan
       verbosity
-      buildCtx {
-        buildSettings = (buildSettings buildCtx) {
-          buildSettingDryRun = True
+      buildCtx
+        { buildSettings = (buildSettings buildCtx) { buildSettingDryRun = True }
         }
-      }
   where
     verbosity = fromFlagOrDefault normal (configVerbosity configFlags)
 

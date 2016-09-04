@@ -67,32 +67,29 @@ import System.Exit ( ExitCode(..) )
 -- candidates and 'Left's are those that do not yet exist.
 guessMainFileCandidates :: InitFlags -> IO [Either FilePath FilePath]
 guessMainFileCandidates flags = do
-  dir <-
-    maybe getCurrentDirectory return (flagToMaybe $ packageDir flags)
+  dir   <- maybe getCurrentDirectory return (flagToMaybe $ packageDir flags)
   files <- getDirectoryContents dir
   let existingCandidates = filter isMain files
       -- We always want to give the user at least one default choice.  If either
       -- Main.hs or Main.lhs has already been created, then we don't want to
       -- suggest the other; however, if neither has been created, then we
       -- suggest both.
-      newCandidates =
-        if any (`elem` existingCandidates) ["Main.hs", "Main.lhs"]
+      newCandidates = if any (`elem`existingCandidates) ["Main.hs", "Main.lhs"]
         then []
         else ["Main.hs", "Main.lhs"]
-      candidates =
-        sortBy (\x y -> comparing (length . either id id) x y
-                        `mappend` compare x y)
-               (map Left newCandidates ++ map Right existingCandidates)
+      candidates = sortBy
+        (\x y -> comparing (length . either id id) x y `mappend` compare x y)
+        (map Left newCandidates ++ map Right existingCandidates)
   return candidates
-
   where
-    isMain f =    (isInfixOf "Main" f || isInfixOf  "main" f)
-               && (isSuffixOf ".hs" f || isSuffixOf ".lhs" f)
+    isMain f =
+      (isInfixOf "Main" f || isInfixOf "main" f)
+        && (isSuffixOf ".hs" f || isSuffixOf ".lhs" f)
 
 -- | Guess the package name based on the given root directory.
 guessPackageName :: FilePath -> IO P.PackageName
-guessPackageName = liftM (P.PackageName . repair . last . splitDirectories)
-                 . tryCanonicalizePath
+guessPackageName =
+  liftM (P.PackageName . repair . last . splitDirectories) . tryCanonicalizePath
   where
     -- Treat each span of non-alphanumeric characters as a hyphen. Each
     -- hyphenated component of a package name must contain at least one
@@ -100,15 +97,19 @@ guessPackageName = liftM (P.PackageName . repair . last . splitDirectories)
     -- this is not the case for the first component, and subsequent components
     -- will simply be run together. For example, "1+2_foo-3" will become
     -- "x12-foo3".
-    repair = repair' ('x' :) id
+    repair = repair' ('x':) id
     repair' invalid valid x = case dropWhile (not . isAlphaNum) x of
-        "" -> repairComponent ""
-        x' -> let (c, r) = first repairComponent $ break (not . isAlphaNum) x'
-              in c ++ repairRest r
+      "" -> repairComponent ""
+      x' ->
+        let (c, r) = first repairComponent $ break (not . isAlphaNum) x'
+        in  c ++ repairRest r
       where
-        repairComponent c | all isNumber c = invalid c
-                          | otherwise      = valid c
-    repairRest = repair' id ('-' :)
+        repairComponent c
+          | all isNumber c
+          = invalid c
+          | otherwise
+          = valid c
+    repairRest = repair' id ('-':)
 
 -- |Data type of source files found in the working directory
 data SourceFileEntry = SourceFileEntry
@@ -120,8 +121,8 @@ data SourceFileEntry = SourceFileEntry
     } deriving Show
 
 sfToFileName :: FilePath -> SourceFileEntry -> FilePath
-sfToFileName projectRoot (SourceFileEntry relPath m ext _ _)
-  = projectRoot </> relPath </> toFilePath m <.> ext
+sfToFileName projectRoot (SourceFileEntry relPath m ext _ _) =
+  projectRoot </> relPath </> toFilePath m <.> ext
 
 -- |Search for source files in the given directory
 -- and return pairs of guessed Haskell source path and
@@ -133,97 +134,113 @@ scanForModulesIn :: FilePath -> FilePath -> IO [SourceFileEntry]
 scanForModulesIn projectRoot srcRoot = scan srcRoot []
   where
     scan dir hierarchy = do
-        entries <- getDirectoryContents (projectRoot </> dir)
-        (files, dirs) <- liftM partitionEithers (mapM (tagIsDir dir) entries)
-        let modules = catMaybes [ guessModuleName hierarchy file
-                                | file <- files
-                                , isUpper (head file) ]
-        modules' <- mapM (findImportsAndExts projectRoot) modules
-        recMods <- mapM (scanRecursive dir hierarchy) dirs
-        return $ concat (modules' : recMods)
+      entries       <- getDirectoryContents (projectRoot </> dir)
+      (files, dirs) <- liftM partitionEithers (mapM (tagIsDir dir) entries)
+      let
+        modules =
+          catMaybes
+            [ guessModuleName hierarchy file
+            | file <- files
+            , isUpper (head file)
+            ]
+      modules' <- mapM (findImportsAndExts projectRoot) modules
+      recMods  <- mapM (scanRecursive dir hierarchy) dirs
+      return $ concat (modules' : recMods)
     tagIsDir parent entry = do
-        isDir <- doesDirectoryExist (parent </> entry)
-        return $ (if isDir then Right else Left) entry
+      isDir <- doesDirectoryExist (parent </> entry)
+      return $ (if isDir then Right else Left) entry
     guessModuleName hierarchy entry
-        | takeBaseName entry == "Setup" = Nothing
-        | ext `elem` sourceExtensions   =
-            SourceFileEntry <$> pure relRoot <*> modName <*> pure ext <*> pure [] <*> pure []
-        | otherwise = Nothing
+      | takeBaseName entry == "Setup"
+      = Nothing
+      | ext `elem` sourceExtensions
+      =   SourceFileEntry
+      <$> pure relRoot
+      <*> modName
+      <*> pure ext
+      <*> pure []
+      <*> pure []
+      | otherwise
+      = Nothing
       where
         relRoot       = makeRelative projectRoot srcRoot
         unqualModName = dropExtension entry
-        modName       = simpleParse
-                      $ intercalate "." . reverse $ (unqualModName : hierarchy)
-        ext           = case takeExtension entry of '.':e -> e; e -> e
+        modName =
+          simpleParse $ intercalate "." . reverse $ (unqualModName : hierarchy)
+        ext = case takeExtension entry of
+          '.':e -> e
+          e     -> e
     scanRecursive parent hierarchy entry
-      | isUpper (head entry) = scan (parent </> entry) (entry : hierarchy)
-      | isLower (head entry) && not (ignoreDir entry) =
-          scanForModulesIn projectRoot $ foldl (</>) srcRoot (reverse (entry : hierarchy))
-      | otherwise = return []
-    ignoreDir ('.':_)  = True
-    ignoreDir dir      = dir `elem` ["dist", "_darcs"]
+      | isUpper (head entry)
+      = scan (parent </> entry) (entry : hierarchy)
+      | isLower (head entry) && not (ignoreDir entry)
+      = scanForModulesIn projectRoot
+      $ foldl (</>) srcRoot (reverse (entry : hierarchy))
+      | otherwise
+      = return []
+    ignoreDir ('.':_) = True
+    ignoreDir dir     = dir `elem` ["dist", "_darcs"]
 
 findImportsAndExts :: FilePath -> SourceFileEntry -> IO SourceFileEntry
 findImportsAndExts projectRoot sf = do
   s <- readFile (sfToFileName projectRoot sf)
 
-  let modules = mapMaybe
-                ( getModName
-                . drop 1
-                . filter (not . null)
-                . dropWhile (/= "import")
-                . words
-                )
-              . filter (not . ("--" `isPrefixOf`)) -- poor man's comment filtering
-              . lines
-              $ s
+  let
+    modules =
+      mapMaybe
+          ( getModName
+          . drop 1
+          . filter (not . null)
+          . dropWhile (/="import")
+          . words
+          )
+        . filter (not . ("--"`isPrefixOf`)) -- poor man's comment filtering
+        . lines
+        $ s
 
-      -- TODO: We should probably make a better attempt at parsing
-      -- comments above.  Unfortunately we can't use a full-fledged
-      -- Haskell parser since cabal's dependencies must be kept at a
-      -- minimum.
+    -- TODO: We should probably make a better attempt at parsing
+    -- comments above.  Unfortunately we can't use a full-fledged
+    -- Haskell parser since cabal's dependencies must be kept at a
+    -- minimum.
 
-      -- A poor man's LANGUAGE pragma parser.
-      exts = mapMaybe simpleParse
-           . concatMap getPragmas
-           . filter isLANGUAGEPragma
-           . map fst
-           . drop 1
-           . takeWhile (not . null . snd)
-           . iterate (takeBraces . snd)
-           $ ("",s)
+    -- A poor man's LANGUAGE pragma parser.
+    exts =
+      mapMaybe simpleParse
+        . concatMap getPragmas
+        . filter isLANGUAGEPragma
+        . map fst
+        . drop 1
+        . takeWhile (not . null . snd)
+        . iterate (takeBraces . snd)
+        $ ("", s)
 
-      takeBraces = break (== '}') . dropWhile (/= '{')
+    takeBraces       = break (=='}') . dropWhile (/='{')
 
-      isLANGUAGEPragma = ("{-# LANGUAGE " `isPrefixOf`)
+    isLANGUAGEPragma = ("{-# LANGUAGE "`isPrefixOf`)
 
-      getPragmas = map trim . splitCommas . takeWhile (/= '#') . drop 13
+    getPragmas       = map trim . splitCommas . takeWhile (/='#') . drop 13
 
-      splitCommas "" = []
-      splitCommas xs = x : splitCommas (drop 1 y)
-        where (x,y) = break (==',') xs
+    splitCommas "" = []
+    splitCommas xs = x : splitCommas (drop 1 y) where (x, y) = break (==',') xs
 
-  return sf { imports    = modules
-            , extensions = exts
-            }
-
- where getModName :: [String] -> Maybe ModuleName
-       getModName []               = Nothing
-       getModName ("qualified":ws) = getModName ws
-       getModName (ms:_)           = simpleParse ms
+  return sf { imports = modules, extensions = exts }
+  where
+    getModName :: [String] -> Maybe ModuleName
+    getModName []               = Nothing
+    getModName ("qualified":ws) = getModName ws
+    getModName (ms         :_ ) = simpleParse ms
 
 
 
 -- Unfortunately we cannot use the version exported by Distribution.Simple.Program
-knownSuffixHandlers :: [(String,String)]
+knownSuffixHandlers :: [(String, String)]
 knownSuffixHandlers =
-  [ ("gc",     "greencard")
-  , ("chs",    "chs")
-  , ("hsc",    "hsc2hs")
-  , ("x",      "alex")
-  , ("y",      "happy")
-  , ("ly",     "happy")
-  , ("cpphs",  "cpp")
+  [ ("gc", "greencard")
+  , ("chs", "chs")
+  , ("hsc", "hsc2hs")
+  , ("x", "alex")
+  , ("y", "happy")
+  , ("ly", "happy")
+  , ("cpphs", "cpp")
   ]
 
 sourceExtensions :: [String]
@@ -231,10 +248,10 @@ sourceExtensions = "hs" : "lhs" : map fst knownSuffixHandlers
 
 neededBuildPrograms :: [SourceFileEntry] -> [String]
 neededBuildPrograms entries =
-    [ handler
-    | ext <- nubSet (map fileExtension entries)
-    , handler <- maybeToList (lookup ext knownSuffixHandlers)
-    ]
+  [ handler
+  | ext     <- nubSet (map fileExtension entries)
+  , handler <- maybeToList (lookup ext knownSuffixHandlers)
+  ]
 
 -- | Guess author and email using darcs and git configuration options. Use
 -- the following in decreasing order of preference:
@@ -254,26 +271,23 @@ guessAuthorNameMail = fmap authorGuessPure authorGuessIO
 -- Ordered in increasing preference, since Flag-as-monoid is identical to
 -- Last.
 authorGuessPure :: AuthorGuessIO -> AuthorGuess
-authorGuessPure (AuthorGuessIO { authorGuessEnv = env
-                               , authorGuessLocalDarcs = darcsLocalF
-                               , authorGuessGlobalDarcs = darcsGlobalF
-                               , authorGuessLocalGit = gitLocal
-                               , authorGuessGlobalGit = gitGlobal })
-    = mconcat
-        [ emailEnv env
-        , gitGlobal
-        , darcsCfg darcsGlobalF
-        , gitLocal
-        , darcsCfg darcsLocalF
-        , gitEnv env
-        , darcsEnv env
-        ]
+authorGuessPure (AuthorGuessIO { authorGuessEnv = env, authorGuessLocalDarcs = darcsLocalF, authorGuessGlobalDarcs = darcsGlobalF, authorGuessLocalGit = gitLocal, authorGuessGlobalGit = gitGlobal })
+  = mconcat
+    [ emailEnv env
+    , gitGlobal
+    , darcsCfg darcsGlobalF
+    , gitLocal
+    , darcsCfg darcsLocalF
+    , gitEnv env
+    , darcsEnv env
+    ]
 
 authorGuessIO :: IO AuthorGuessIO
-authorGuessIO = AuthorGuessIO
+authorGuessIO =
+  AuthorGuessIO
     <$> getEnvironment
     <*> (maybeReadFile $ "_darcs" </> "prefs" </> "author")
-    <*> (maybeReadFile =<< liftM (</> (".darcs" </> "author")) getHomeDirectory)
+    <*> (maybeReadFile =<< liftM (</>(".darcs" </> "author")) getHomeDirectory)
     <*> gitCfg Local
     <*> gitCfg Global
 
@@ -303,9 +317,7 @@ darcsCfg :: Maybe String -> AuthorGuess
 darcsCfg = maybe mempty nameAndMail
 
 emailEnv :: Enviro -> AuthorGuess
-emailEnv env = (mempty, mail)
-  where
-    mail = maybeFlag "EMAIL" env
+emailEnv env = (mempty, mail) where mail = maybeFlag "EMAIL" env
 
 gitCfg :: GitLoc -> IO AuthorGuess
 gitCfg which = do
@@ -323,11 +335,11 @@ happyOutput v = case v of
 
 gitConfigQuery :: GitLoc -> String -> IO (ExitCode, String, String)
 gitConfigQuery which key =
-    fmap trim' $ readProcessWithExitCode "git" ["config", w, key] ""
+  fmap trim' $ readProcessWithExitCode "git" ["config", w, key] ""
   where
     w = case which of
-        Local  -> "--local"
-        Global -> "--global"
+      Local  -> "--local"
+      Global -> "--global"
     trim' (a, b, c) = (a, trim b, c)
 
 maybeFlag :: String -> Enviro -> Flag String
@@ -336,46 +348,53 @@ maybeFlag k = maybe mempty Flag . lookup k
 -- | Read the first non-comment, non-trivial line of a file, if it exists
 maybeReadFile :: String -> IO (Maybe String)
 maybeReadFile f = do
-    exists <- doesFileExist f
-    if exists
-        then fmap getFirstLine $ readFile f
-        else return Nothing
+  exists <- doesFileExist f
+  if exists then fmap getFirstLine $ readFile f else return Nothing
   where
     getFirstLine content =
-      let nontrivialLines = dropWhile (\l -> (null l) || ("#" `isPrefixOf` l)) . lines $ content
-      in case nontrivialLines of
-           [] -> Nothing
-           (l:_) -> Just l
+      let nontrivialLines
+            = dropWhile (\l -> (null l) || ("#" `isPrefixOf` l))
+            . lines
+            $ content
+      in  case nontrivialLines of
+            []    -> Nothing
+            (l:_) -> Just l
 
 -- |Get list of categories used in Hackage. NOTE: Very slow, needs to be cached
 knownCategories :: SourcePackageDb -> [String]
 knownCategories (SourcePackageDb sourcePkgIndex _) = nubSet
-    [ cat | pkg <- map head (allPackagesByName sourcePkgIndex)
-          , let catList = (PD.category . PD.packageDescription . packageDescription) pkg
-          , cat <- splitString ',' catList
-    ]
+  [ cat
+  | pkg <- map head (allPackagesByName sourcePkgIndex)
+  , let catList = (PD.category . PD.packageDescription . packageDescription) pkg
+  , cat <- splitString ',' catList
+  ]
 
 -- Parse name and email, from darcs pref files or environment variable
 nameAndMail :: String -> (Flag String, Flag String)
 nameAndMail str
-  | all isSpace nameOrEmail = mempty
-  | null erest = (mempty, Flag $ trim nameOrEmail)
-  | otherwise  = (Flag $ trim nameOrEmail, Flag mail)
+  | all isSpace nameOrEmail
+  = mempty
+  | null erest
+  = (mempty, Flag $ trim nameOrEmail)
+  | otherwise
+  = (Flag $ trim nameOrEmail, Flag mail)
   where
-    (nameOrEmail,erest) = break (== '<') str
-    (mail,_)            = break (== '>') (tail erest)
+    (nameOrEmail, erest) = break (=='<') str
+    (mail       , _    ) = break (=='>') (tail erest)
 
 trim :: String -> String
 trim = removeLeadingSpace . reverse . removeLeadingSpace . reverse
   where
-    removeLeadingSpace  = dropWhile isSpace
+    removeLeadingSpace = dropWhile isSpace
 
 -- split string at given character, and remove whitespace
 splitString :: Char -> String -> [String]
-splitString sep str = go str where
-    go s = if null s' then [] else tok : go rest where
-      s' = dropWhile (\c -> c == sep || isSpace c) s
-      (tok,rest) = break (==sep) s'
+splitString sep str = go str
+  where
+    go s = if null s' then [] else tok : go rest
+      where
+        s'          = dropWhile (\c -> c == sep || isSpace c) s
+        (tok, rest) = break (==sep) s'
 
 nubSet :: (Ord a) => [a] -> [a]
 nubSet = Set.toList . Set.fromList

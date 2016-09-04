@@ -74,8 +74,10 @@ import System.IO         (withBinaryFile, IOMode(..))
 --
 hashedInstalledPackageId :: PackageHashInputs -> InstalledPackageId
 hashedInstalledPackageId
-  | buildOS == Windows = hashedInstalledPackageIdShort
-  | otherwise          = hashedInstalledPackageIdLong
+  | buildOS == Windows
+  = hashedInstalledPackageIdShort
+  | otherwise
+  = hashedInstalledPackageIdLong
 
 -- | Calculate a 'InstalledPackageId' for a package using our nix-style
 -- inputs hashing method.
@@ -84,11 +86,11 @@ hashedInstalledPackageId
 -- without significant path length limitations (ie not Windows).
 --
 hashedInstalledPackageIdLong :: PackageHashInputs -> InstalledPackageId
-hashedInstalledPackageIdLong pkghashinputs@PackageHashInputs{pkgHashPkgId} =
-    mkUnitId $
-         display pkgHashPkgId   -- to be a bit user friendly
-      ++ "-"
-      ++ showHashValue (hashPackageHashInputs pkghashinputs)
+hashedInstalledPackageIdLong pkghashinputs@PackageHashInputs { pkgHashPkgId } =
+  mkUnitId
+    $  display pkgHashPkgId   -- to be a bit user friendly
+    ++ "-"
+    ++ showHashValue (hashPackageHashInputs pkghashinputs)
 
 -- | On Windows we have serious problems with path lengths. Windows imposes a
 -- maximum path length of 260 chars, and even if we can use the windows long
@@ -109,14 +111,14 @@ hashedInstalledPackageIdLong pkghashinputs@PackageHashInputs{pkgHashPkgId} =
 -- properties (at least for now).
 --
 hashedInstalledPackageIdShort :: PackageHashInputs -> InstalledPackageId
-hashedInstalledPackageIdShort pkghashinputs@PackageHashInputs{pkgHashPkgId} =
-    mkUnitId $
-      intercalate "-"
+hashedInstalledPackageIdShort pkghashinputs@PackageHashInputs { pkgHashPkgId }
+  = mkUnitId $ intercalate
+    "-"
         -- max length now 64
-        [ truncateStr 14 (display name)
-        , truncateStr  8 (display version)
-        , showHashValue (truncateHash (hashPackageHashInputs pkghashinputs))
-        ]
+    [ truncateStr 14 (display name)
+    , truncateStr 8  (display version)
+    , showHashValue (truncateHash (hashPackageHashInputs pkghashinputs))
+    ]
   where
     PackageIdentifier name version = pkgHashPkgId
 
@@ -125,8 +127,11 @@ hashedInstalledPackageIdShort pkghashinputs@PackageHashInputs{pkgHashPkgId} =
     truncateHash (HashValue h) = HashValue (BS.take 20 h)
 
     -- Truncate a string, with a visual indication that it is truncated.
-    truncateStr n s | length s <= n = s
-                    | otherwise     = take (n-1) s ++ "_"
+    truncateStr n s
+      | length s <= n
+      = s
+      | otherwise
+      = take (n - 1) s ++ "_"
 
 -- | All the information that contribues to a package's hash, and thus its
 -- 'InstalledPackageId'.
@@ -186,13 +191,8 @@ hashPackageHashInputs = hashValue . renderPackageHashInputs
 -- The 'hashValue' of this text is the overall package hash.
 --
 renderPackageHashInputs :: PackageHashInputs -> LBS.ByteString
-renderPackageHashInputs PackageHashInputs{
-                          pkgHashPkgId,
-                          pkgHashSourceHash,
-                          pkgHashDirectDeps,
-                          pkgHashOtherConfig =
-                            PackageHashConfigInputs{..}
-                        } =
+renderPackageHashInputs PackageHashInputs { pkgHashPkgId, pkgHashSourceHash, pkgHashDirectDeps, pkgHashOtherConfig = PackageHashConfigInputs {..} }
+  =
     -- The purpose of this somewhat laboured rendering (e.g. why not just
     -- use show?) is so that existing package hashes do not change
     -- unnecessarily when new configuration inputs are added into the hash.
@@ -208,45 +208,57 @@ renderPackageHashInputs PackageHashInputs{
     -- into the ghc-pkg db. At that point this should probably be changed to
     -- use the config file infrastructure so it can be read back in again.
     LBS.pack $ unlines $ catMaybes
-      [ entry "pkgid"       display pkgHashPkgId
-      , entry "src"         showHashValue pkgHashSourceHash
-      , entry "deps"        (intercalate ", " . map display
-                                              . Set.toList) pkgHashDirectDeps
+    [ entry "pkgid" display       pkgHashPkgId
+    , entry "src"   showHashValue pkgHashSourceHash
+    , entry "deps"
+            (intercalate ", " . map display . Set.toList)
+            pkgHashDirectDeps
         -- and then all the config
-      , entry "compilerid"  display pkgHashCompilerId
-      , entry "platform"    display pkgHashPlatform
-      , opt   "flags" []    showFlagAssignment pkgHashFlagAssignment
-      , opt   "configure-script" [] unwords pkgHashConfigureScriptArgs
-      , opt   "vanilla-lib" True  display pkgHashVanillaLib
-      , opt   "shared-lib"  False display pkgHashSharedLib
-      , opt   "dynamic-exe" False display pkgHashDynExe
-      , opt   "ghci-lib"    False display pkgHashGHCiLib
-      , opt   "prof-lib"    False display pkgHashProfLib
-      , opt   "prof-exe"    False display pkgHashProfExe
-      , opt   "prof-lib-detail" ProfDetailDefault showProfDetailLevel pkgHashProfLibDetail 
-      , opt   "prof-exe-detail" ProfDetailDefault showProfDetailLevel pkgHashProfExeDetail 
-      , opt   "hpc"          False display pkgHashCoverage
-      , opt   "optimisation" NormalOptimisation (show . fromEnum) pkgHashOptimization
-      , opt   "split-objs"   False display pkgHashSplitObjs
-      , opt   "stripped-lib" False display pkgHashStripLibs
-      , opt   "stripped-exe" True  display pkgHashStripExes
-      , opt   "debug-info"   NormalDebugInfo (show . fromEnum) pkgHashDebugInfo
-      , opt   "extra-lib-dirs"     [] unwords pkgHashExtraLibDirs
-      , opt   "extra-framework-dirs" [] unwords pkgHashExtraFrameworkDirs
-      , opt   "extra-include-dirs" [] unwords pkgHashExtraIncludeDirs
-      , opt   "prog-prefix" Nothing (maybe "" fromPathTemplate) pkgHashProgPrefix
-      , opt   "prog-suffix" Nothing (maybe "" fromPathTemplate) pkgHashProgSuffix
-      ]
+    , entry "compilerid" display pkgHashCompilerId
+    , entry "platform"   display pkgHashPlatform
+    , opt "flags"            []    showFlagAssignment pkgHashFlagAssignment
+    , opt "configure-script" []    unwords            pkgHashConfigureScriptArgs
+    , opt "vanilla-lib"      True  display            pkgHashVanillaLib
+    , opt "shared-lib"       False display            pkgHashSharedLib
+    , opt "dynamic-exe"      False display            pkgHashDynExe
+    , opt "ghci-lib"         False display            pkgHashGHCiLib
+    , opt "prof-lib"         False display            pkgHashProfLib
+    , opt "prof-exe"         False display            pkgHashProfExe
+    , opt "prof-lib-detail"
+          ProfDetailDefault
+          showProfDetailLevel
+          pkgHashProfLibDetail
+    , opt "prof-exe-detail"
+          ProfDetailDefault
+          showProfDetailLevel
+          pkgHashProfExeDetail
+    , opt "hpc" False display pkgHashCoverage
+    , opt "optimisation"
+          NormalOptimisation
+          (show . fromEnum)
+          pkgHashOptimization
+    , opt "split-objs" False display pkgHashSplitObjs
+    , opt "stripped-lib" False display pkgHashStripLibs
+    , opt "stripped-exe" True display pkgHashStripExes
+    , opt "debug-info" NormalDebugInfo (show . fromEnum) pkgHashDebugInfo
+    , opt "extra-lib-dirs" [] unwords pkgHashExtraLibDirs
+    , opt "extra-framework-dirs" [] unwords pkgHashExtraFrameworkDirs
+    , opt "extra-include-dirs" [] unwords pkgHashExtraIncludeDirs
+    , opt "prog-prefix" Nothing (maybe "" fromPathTemplate) pkgHashProgPrefix
+    , opt "prog-suffix" Nothing (maybe "" fromPathTemplate) pkgHashProgSuffix
+    ]
   where
-    entry key     format value = Just (key ++ ": " ++ format value)
-    opt   key def format value
-         | value == def = Nothing
-         | otherwise    = entry key format value
+    entry key format value = Just (key ++ ": " ++ format value)
+    opt key def format value
+      | value == def
+      = Nothing
+      | otherwise
+      = entry key format value
 
     showFlagAssignment = unwords . map showEntry . sortBy (compare `on` fst)
       where
         showEntry (FlagName name, False) = '-' : name
-        showEntry (FlagName name, True)  = '+' : name
+        showEntry (FlagName name, True ) = '+' : name
 
 -----------------------------------------------
 -- The specific choice of hash implementation
@@ -285,9 +297,8 @@ showHashValue (HashValue digest) = BS.unpack (Base16.encode digest)
 -- | Hash the content of a file. Uses SHA256.
 --
 readFileHashValue :: FilePath -> IO HashValue
-readFileHashValue tarball =
-    withBinaryFile tarball ReadMode $ \hnd ->
-      evaluate . hashValue =<< LBS.hGetContents hnd
+readFileHashValue tarball = withBinaryFile tarball ReadMode
+  $ \hnd -> evaluate . hashValue =<< LBS.hGetContents hnd
 
 -- | Convert a hash from TUF metadata into a 'PackageSourceHash'.
 --
@@ -298,8 +309,7 @@ hashFromTUF :: Sec.Hash -> HashValue
 hashFromTUF (Sec.Hash hashstr) =
     --TODO: [code cleanup] either we should get TUF to use raw bytestrings or
     -- perhaps we should also just use a base16 string as the internal rep.
-    case Base16.decode (BS.pack hashstr) of
-      (hash, trailing) | not (BS.null hash) && BS.null trailing
-        -> HashValue hash
-      _ -> error "hashFromTUF: cannot decode base16 hash"
+                                 case Base16.decode (BS.pack hashstr) of
+  (hash, trailing) | not (BS.null hash) && BS.null trailing -> HashValue hash
+  _ -> error "hashFromTUF: cannot decode base16 hash"
 

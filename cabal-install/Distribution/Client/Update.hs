@@ -44,45 +44,52 @@ import qualified Hackage.Security.Client as Sec
 -- | 'update' downloads the package list from all known servers
 update :: Verbosity -> RepoContext -> IO ()
 update verbosity repoCtxt | null (repoContextRepos repoCtxt) = do
-  warn verbosity $ "No remote package servers have been specified. Usually "
-                ++ "you would have one specified in the config file."
-update verbosity repoCtxt = do
+  warn verbosity
+    $  "No remote package servers have been specified. Usually "
+    ++ "you would have one specified in the config file."
+update verbosity repoCtxt                                    = do
   let repos       = repoContextRepos repoCtxt
       remoteRepos = catMaybes (map maybeRepoRemote repos)
   case remoteRepos of
     [] -> return ()
     [remoteRepo] ->
-        notice verbosity $ "Downloading the latest package list from "
-                        ++ remoteRepoName remoteRepo
-    _ -> notice verbosity . unlines
-            $ "Downloading the latest package lists from: "
-            : map (("- " ++) . remoteRepoName) remoteRepos
+      notice verbosity
+        $  "Downloading the latest package list from "
+        ++ remoteRepoName remoteRepo
+    _ ->
+      notice verbosity
+        . unlines
+        $ "Downloading the latest package lists from: "
+        : map (("- "++) . remoteRepoName) remoteRepos
   jobCtrl <- newParallelJobControl (length repos)
   mapM_ (spawnJob jobCtrl . updateRepo verbosity repoCtxt) repos
-  mapM_ (\_ -> collectJob jobCtrl) repos
+  mapM_ (\_ -> collectJob jobCtrl)                         repos
 
 updateRepo :: Verbosity -> RepoContext -> Repo -> IO ()
 updateRepo verbosity repoCtxt repo = do
   transport <- repoContextGetTransport repoCtxt
   case repo of
-    RepoLocal{..} -> return ()
-    RepoRemote{..} -> do
-      downloadResult <- downloadIndex transport verbosity repoRemote repoLocalDir
+    RepoLocal {..} -> return ()
+    RepoRemote {..} -> do
+      downloadResult <- downloadIndex transport
+                                      verbosity
+                                      repoRemote
+                                      repoLocalDir
       case downloadResult of
-        FileAlreadyInCache -> return ()
+        FileAlreadyInCache       -> return ()
         FileDownloaded indexPath -> do
-          writeFileAtomic (dropExtension indexPath) . maybeDecompress
-                                                  =<< BS.readFile indexPath
+          writeFileAtomic (dropExtension indexPath)
+            .   maybeDecompress
+            =<< BS.readFile indexPath
           updateRepoIndexCache verbosity (RepoIndex repoCtxt repo)
     RepoSecure{} -> repoContextWithSecureRepo repoCtxt repo $ \repoSecure -> do
-      ce <- if repoContextIgnoreExpiry repoCtxt
-              then Just `fmap` getCurrentTime
-              else return Nothing
+      ce      <- if repoContextIgnoreExpiry repoCtxt
+        then Just `fmap` getCurrentTime
+        else return Nothing
       updated <- Sec.uncheckClientErrors $ Sec.checkForUpdates repoSecure ce
       -- Update cabal's internal index as well so that it's not out of sync
       -- (If all access to the cache goes through hackage-security this can go)
       case updated of
-        Sec.NoUpdates  ->
-          return ()
+        Sec.NoUpdates -> return ()
         Sec.HasUpdates ->
           updateRepoIndexCache verbosity (RepoIndex repoCtxt repo)

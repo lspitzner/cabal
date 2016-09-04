@@ -51,20 +51,19 @@ instance Binary ConstraintSource
 
 -- | Description of a 'ConstraintSource'.
 showConstraintSource :: ConstraintSource -> String
-showConstraintSource (ConstraintSourceMainConfig path) =
-    "main config " ++ path
+showConstraintSource (ConstraintSourceMainConfig path) = "main config " ++ path
 showConstraintSource (ConstraintSourceProjectConfig path) =
-    "project config " ++ path
+  "project config " ++ path
 showConstraintSource (ConstraintSourceSandboxConfig path) =
-    "sandbox config " ++ path
-showConstraintSource (ConstraintSourceUserConfig path)= "user config " ++ path
-showConstraintSource ConstraintSourceCommandlineFlag = "command line flag"
-showConstraintSource ConstraintSourceUserTarget = "user target"
+  "sandbox config " ++ path
+showConstraintSource (ConstraintSourceUserConfig path) = "user config " ++ path
+showConstraintSource ConstraintSourceCommandlineFlag   = "command line flag"
+showConstraintSource ConstraintSourceUserTarget        = "user target"
 showConstraintSource ConstraintSourceNonUpgradeablePackage =
-    "non-upgradeable package"
+  "non-upgradeable package"
 showConstraintSource ConstraintSourceModifiedAddSourceDep =
-    "modified add-source dependency"
+  "modified add-source dependency"
 showConstraintSource ConstraintSourceFreeze = "cabal freeze"
 showConstraintSource ConstraintSourceConfigFlagOrTarget =
-    "config file, command line flag, or user target"
+  "config file, command line flag, or user target"
 showConstraintSource ConstraintSourceUnknown = "unknown source"

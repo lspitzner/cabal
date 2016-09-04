@@ -214,9 +214,7 @@ setEvent handle =
 import Distribution.Verbosity (Verbosity)
 import Distribution.Simple.Utils (die)
 
-possibleSelfUpgrade :: Verbosity
-                    -> [FilePath]
-                    -> IO a -> IO a
+possibleSelfUpgrade :: Verbosity -> [FilePath] -> IO a -> IO a
 possibleSelfUpgrade _ _ action = action
 
 deleteOldExeFile :: Verbosity -> Int -> FilePath -> IO ()

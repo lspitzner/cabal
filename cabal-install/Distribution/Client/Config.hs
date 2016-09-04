@@ -413,20 +413,19 @@ baseSavedConfig = do
   userPrefix <- defaultCabalDir
   logsDir    <- defaultLogsDir
   worldFile  <- defaultWorldFile
-  return mempty {
-    savedConfigureFlags  = mempty {
-      configHcFlavor     = toFlag defaultCompiler,
-      configUserInstall  = toFlag defaultUserInstall,
-      configVerbosity    = toFlag normal
-    },
-    savedUserInstallDirs = mempty {
-      prefix             = toFlag (toPathTemplate userPrefix)
-    },
-    savedGlobalFlags = mempty {
-      globalLogsDir      = toFlag logsDir,
-      globalWorldFile    = toFlag worldFile
+  return mempty
+    { savedConfigureFlags  = mempty
+      { configHcFlavor    = toFlag defaultCompiler
+      , configUserInstall = toFlag defaultUserInstall
+      , configVerbosity   = toFlag normal
+      }
+    , savedUserInstallDirs = mempty
+      { prefix = toFlag (toPathTemplate userPrefix)
+      }
+    , savedGlobalFlags     = mempty { globalLogsDir   = toFlag logsDir
+                                    , globalWorldFile = toFlag worldFile
+                                    }
     }
-  }
 
 -- | This is the initial configuration that we write out to to the config file
 -- if the file does not exist (or the config we use if the file cannot be read
@@ -436,25 +435,26 @@ baseSavedConfig = do
 --
 initialSavedConfig :: IO SavedConfig
 initialSavedConfig = do
-  cacheDir   <- defaultCacheDir
-  logsDir    <- defaultLogsDir
-  worldFile  <- defaultWorldFile
-  extraPath  <- defaultExtraPath
-  return mempty {
-    savedGlobalFlags     = mempty {
-      globalCacheDir     = toFlag cacheDir,
-      globalRemoteRepos  = toNubList [addInfoForKnownRepos defaultRemoteRepo],
-      globalWorldFile    = toFlag worldFile
-    },
-    savedConfigureFlags  = mempty {
-      configProgramPathExtra = toNubList extraPath
-    },
-    savedInstallFlags    = mempty {
-      installSummaryFile = toNubList [toPathTemplate (logsDir </> "build.log")],
-      installBuildReports= toFlag AnonymousReports,
-      installNumJobs     = toFlag Nothing
+  cacheDir  <- defaultCacheDir
+  logsDir   <- defaultLogsDir
+  worldFile <- defaultWorldFile
+  extraPath <- defaultExtraPath
+  return mempty
+    { savedGlobalFlags    = mempty
+      { globalCacheDir    = toFlag cacheDir
+      , globalRemoteRepos = toNubList [addInfoForKnownRepos defaultRemoteRepo]
+      , globalWorldFile   = toFlag worldFile
+      }
+    , savedConfigureFlags = mempty
+      { configProgramPathExtra = toNubList extraPath
+      }
+    , savedInstallFlags   = mempty
+      { installSummaryFile  = toNubList
+        [toPathTemplate (logsDir </> "build.log")]
+      , installBuildReports = toFlag AnonymousReports
+      , installNumJobs      = toFlag Nothing
+      }
     }
-  }
 
 --TODO: misleading, there's no way to override this default
 --      either make it possible or rename to simply getCabalDir.
@@ -516,9 +516,9 @@ defaultRemoteRepo = RemoteRepo name uri Nothing [] 0 False
 -- Hackage repository, we should enable security and specify keys and threshold
 -- for repositories that have their security setting as 'Nothing' (default).
 addInfoForKnownRepos :: RemoteRepo -> RemoteRepo
-addInfoForKnownRepos repo@RemoteRepo{ remoteRepoName = "hackage.haskell.org" } =
-      tryHttps
-    $ if isOldHackageURI (remoteRepoURI repo) then defaultRemoteRepo else repo
+addInfoForKnownRepos repo@RemoteRepo { remoteRepoName = "hackage.haskell.org" }
+  = tryHttps
+  $ if isOldHackageURI (remoteRepoURI repo) then defaultRemoteRepo else repo
   where
     tryHttps r = r { remoteRepoShouldTryHttps = True }
 addInfoForKnownRepos other = other
@@ -530,32 +530,38 @@ addInfoForKnownRepos other = other
 loadConfig :: Verbosity -> Flag FilePath -> IO SavedConfig
 loadConfig verbosity configFileFlag = addBaseConf $ do
   (source, configFile) <- getConfigFilePathAndSource configFileFlag
-  minp <- readConfigFile mempty configFile
+  minp                 <- readConfigFile mempty configFile
   case minp of
-    Nothing -> do
-      notice verbosity $ "Config file path source is " ++ sourceMsg source ++ "."
+    Nothing                -> do
+      notice verbosity
+        $  "Config file path source is "
+        ++ sourceMsg source
+        ++ "."
       notice verbosity $ "Config file " ++ configFile ++ " not found."
       createDefaultConfigFile verbosity configFile
-      loadConfig verbosity configFileFlag
+      loadConfig              verbosity configFileFlag
     Just (ParseOk ws conf) -> do
-      unless (null ws) $ warn verbosity $
-        unlines (map (showPWarning configFile) ws)
+      unless (null ws)
+        $ warn verbosity
+        $ unlines (map (showPWarning configFile) ws)
       return conf
     Just (ParseFailed err) -> do
       let (line, msg) = locatedErrorMsg err
-      die $
-          "Error parsing config file " ++ configFile
-        ++ maybe "" (\n -> ':' : show n) line ++ ":\n" ++ msg
-
+      die
+        $  "Error parsing config file "
+        ++ configFile
+        ++ maybe "" (\n -> ':' : show n) line
+        ++ ":\n"
+        ++ msg
   where
     addBaseConf body = do
       base  <- baseSavedConfig
       extra <- body
       return (base `mappend` extra)
 
-    sourceMsg CommandlineOption =   "commandline option"
+    sourceMsg CommandlineOption   = "commandline option"
     sourceMsg EnvironmentVariable = "env var CABAL_CONFIG"
-    sourceMsg Default =             "default config file"
+    sourceMsg Default             = "default config file"
 
 data ConfigFileSource = CommandlineOption
                       | EnvironmentVariable
@@ -567,28 +573,28 @@ getConfigFilePath :: Flag FilePath -> IO FilePath
 getConfigFilePath = fmap snd . getConfigFilePathAndSource
 
 getConfigFilePathAndSource :: Flag FilePath -> IO (ConfigFileSource, FilePath)
-getConfigFilePathAndSource configFileFlag =
-    getSource sources
+getConfigFilePathAndSource configFileFlag = getSource sources
   where
     sources =
-      [ (CommandlineOption,   return . flagToMaybe $ configFileFlag)
+      [ (CommandlineOption, return . flagToMaybe $ configFileFlag)
       , (EnvironmentVariable, lookup "CABAL_CONFIG" `liftM` getEnvironment)
-      , (Default,             Just `liftM` defaultConfigFile) ]
+      , (Default, Just `liftM` defaultConfigFile)
+      ]
 
     getSource [] = error "no config file path candidate found."
-    getSource ((source,action): xs) =
-                      action >>= maybe (getSource xs) (return . (,) source)
+    getSource ((source, action):xs) =
+      action >>= maybe (getSource xs) (return . (,) source)
 
-readConfigFile :: SavedConfig -> FilePath -> IO (Maybe (ParseResult SavedConfig))
-readConfigFile initial file = handleNotExists $
-  fmap (Just . parseConfig (ConstraintSourceMainConfig file) initial)
-       (readFile file)
-
+readConfigFile
+  :: SavedConfig -> FilePath -> IO (Maybe (ParseResult SavedConfig))
+readConfigFile initial file = handleNotExists $ fmap
+  (Just . parseConfig (ConstraintSourceMainConfig file) initial)
+  (readFile file)
   where
-    handleNotExists action = catchIO action $ \ioe ->
-      if isDoesNotExistError ioe
-        then return Nothing
-        else ioError ioe
+    handleNotExists action =
+      catchIO action
+        $ \ioe ->
+            if isDoesNotExistError ioe then return Nothing else ioError ioe
 
 createDefaultConfigFile :: Verbosity -> FilePath -> IO ()
 createDefaultConfigFile verbosity filePath = do
@@ -601,22 +607,26 @@ writeConfigFile :: FilePath -> SavedConfig -> SavedConfig -> IO ()
 writeConfigFile file comments vals = do
   let tmpFile = file <.> "tmp"
   createDirectoryIfMissing True (takeDirectory file)
-  writeFile tmpFile $ explanation ++ showConfigWithComments comments vals ++ "\n"
+  writeFile tmpFile
+    $  explanation
+    ++ showConfigWithComments comments vals
+    ++ "\n"
   renameFile tmpFile file
   where
     explanation = unlines
-      ["-- This is the configuration file for the 'cabal' command line tool."
-      ,""
-      ,"-- The available configuration options are listed below."
-      ,"-- Some of them have default values listed."
-      ,""
-      ,"-- Lines (like this one) beginning with '--' are comments."
-      ,"-- Be careful with spaces and indentation because they are"
-      ,"-- used to indicate layout for nested sections."
-      ,""
-      ,"-- Cabal library version: " ++ showVersion cabalVersion
-      ,"-- cabal-install version: " ++ showVersion Paths_cabal_install.version
-      ,"",""
+      [ "-- This is the configuration file for the 'cabal' command line tool."
+      , ""
+      , "-- The available configuration options are listed below."
+      , "-- Some of them have default values listed."
+      , ""
+      , "-- Lines (like this one) beginning with '--' are comments."
+      , "-- Be careful with spaces and indentation because they are"
+      , "-- used to indicate layout for nested sections."
+      , ""
+      , "-- Cabal library version: " ++ showVersion cabalVersion
+      , "-- cabal-install version: " ++ showVersion Paths_cabal_install.version
+      , ""
+      , ""
       ]
 
 -- | These are the default values that get used in Cabal if a no value is
@@ -628,154 +638,209 @@ commentSavedConfig :: IO SavedConfig
 commentSavedConfig = do
   userInstallDirs   <- defaultInstallDirs defaultCompiler True True
   globalInstallDirs <- defaultInstallDirs defaultCompiler False True
-  return SavedConfig {
-    savedGlobalFlags       = defaultGlobalFlags,
-    savedInstallFlags      = defaultInstallFlags,
-    savedConfigureExFlags  = defaultConfigExFlags,
-    savedConfigureFlags    = (defaultConfigFlags defaultProgramConfiguration) {
-      configUserInstall    = toFlag defaultUserInstall,
-      configAllowNewer     = Just (AllowNewer RelaxDepsNone),
-      configAllowOlder     = Just (AllowOlder RelaxDepsNone)
-    },
-    savedUserInstallDirs   = fmap toFlag userInstallDirs,
-    savedGlobalInstallDirs = fmap toFlag globalInstallDirs,
-    savedUploadFlags       = commandDefaultFlags uploadCommand,
-    savedReportFlags       = commandDefaultFlags reportCommand,
-    savedHaddockFlags      = defaultHaddockFlags
-  }
+  return SavedConfig
+    { savedGlobalFlags       = defaultGlobalFlags
+    , savedInstallFlags      = defaultInstallFlags
+    , savedConfigureExFlags  = defaultConfigExFlags
+    , savedConfigureFlags    = (defaultConfigFlags defaultProgramConfiguration)
+      { configUserInstall = toFlag defaultUserInstall
+      , configAllowNewer  = Just (AllowNewer RelaxDepsNone)
+      , configAllowOlder  = Just (AllowOlder RelaxDepsNone)
+      }
+    , savedUserInstallDirs   = fmap toFlag userInstallDirs
+    , savedGlobalInstallDirs = fmap toFlag globalInstallDirs
+    , savedUploadFlags       = commandDefaultFlags uploadCommand
+    , savedReportFlags       = commandDefaultFlags reportCommand
+    , savedHaddockFlags      = defaultHaddockFlags
+    }
 
 -- | All config file fields.
 --
 configFieldDescriptions :: ConstraintSource -> [FieldDescr SavedConfig]
 configFieldDescriptions src =
 
-     toSavedConfig liftGlobalFlag
-       (commandOptions (globalCommand []) ParseArgs)
-       ["version", "numeric-version", "config-file", "sandbox-config-file"] []
+  toSavedConfig
+      liftGlobalFlag
+      (commandOptions (globalCommand []) ParseArgs)
+      ["version", "numeric-version", "config-file", "sandbox-config-file"]
+      []
 
-  ++ toSavedConfig liftConfigFlag
-       (configureOptions ParseArgs)
-       (["builddir", "constraint", "dependency", "ipid"]
-        ++ map fieldName installDirsFields)
+    ++ toSavedConfig
+         liftConfigFlag
+         (configureOptions ParseArgs)
+         (  ["builddir", "constraint", "dependency", "ipid"]
+         ++ map fieldName installDirsFields
+         )
 
         -- This is only here because viewAsFieldDescr gives us a parser
         -- that only recognises 'ghc' etc, the case-sensitive flag names, not
         -- what the normal case-insensitive parser gives us.
-       [simpleField "compiler"
-          (fromFlagOrDefault Disp.empty . fmap Text.disp) (optional Text.parse)
-          configHcFlavor (\v flags -> flags { configHcFlavor = v })
-       ,let pkgs = (Just . AllowOlder . RelaxDepsSome) `fmap` parseOptCommaList Text.parse
-            parseAllowOlder = ((Just . AllowOlder . toRelaxDeps) `fmap` Text.parse) Parse.<++ pkgs in
-        simpleField "allow-older"
-        (showRelaxDeps . fmap unAllowOlder) parseAllowOlder
-        configAllowOlder (\v flags -> flags { configAllowOlder = v })
-       ,let pkgs = (Just . AllowNewer . RelaxDepsSome) `fmap` parseOptCommaList Text.parse
-            parseAllowNewer = ((Just . AllowNewer . toRelaxDeps) `fmap` Text.parse) Parse.<++ pkgs in
-        simpleField "allow-newer"
-        (showRelaxDeps . fmap unAllowNewer) parseAllowNewer
-        configAllowNewer (\v flags -> flags { configAllowNewer = v })
+         [ simpleField "compiler"
+                       (fromFlagOrDefault Disp.empty . fmap Text.disp)
+                       (optional Text.parse)
+                       configHcFlavor
+                       (\v flags -> flags { configHcFlavor = v })
+         , let
+             pkgs = (Just . AllowOlder . RelaxDepsSome)
+               `fmap` parseOptCommaList Text.parse
+             parseAllowOlder =
+               ((Just . AllowOlder . toRelaxDeps) `fmap` Text.parse)
+                 Parse.<++ pkgs
+           in
+             simpleField "allow-older"
+                         (showRelaxDeps . fmap unAllowOlder)
+                         parseAllowOlder
+                         configAllowOlder
+                         (\v flags -> flags { configAllowOlder = v })
+         , let
+             pkgs = (Just . AllowNewer . RelaxDepsSome)
+               `fmap` parseOptCommaList Text.parse
+             parseAllowNewer =
+               ((Just . AllowNewer . toRelaxDeps) `fmap` Text.parse)
+                 Parse.<++ pkgs
+           in
+             simpleField "allow-newer"
+                         (showRelaxDeps . fmap unAllowNewer)
+                         parseAllowNewer
+                         configAllowNewer
+                         (\v flags -> flags { configAllowNewer = v })
         -- TODO: The following is a temporary fix. The "optimization"
         -- and "debug-info" fields are OptArg, and viewAsFieldDescr
         -- fails on that. Instead of a hand-written hackaged parser
         -- and printer, we should handle this case properly in the
         -- library.
-       ,liftField configOptimization (\v flags ->
-                                       flags { configOptimization = v }) $
-        let name = "optimization" in
-        FieldDescr name
-          (\f -> case f of
+         , liftField configOptimization
+                     (\v flags -> flags { configOptimization = v })
+           $ let
+               name = "optimization"
+             in
+               FieldDescr
+                 name
+                 ( \f -> case f of
                    Flag NoOptimisation      -> Disp.text "False"
                    Flag NormalOptimisation  -> Disp.text "True"
                    Flag MaximumOptimisation -> Disp.text "2"
-                   _                        -> Disp.empty)
-          (\line str _ -> case () of
-           _ |  str == "False" -> ParseOk [] (Flag NoOptimisation)
-             |  str == "True"  -> ParseOk [] (Flag NormalOptimisation)
-             |  str == "0"     -> ParseOk [] (Flag NoOptimisation)
-             |  str == "1"     -> ParseOk [] (Flag NormalOptimisation)
-             |  str == "2"     -> ParseOk [] (Flag MaximumOptimisation)
-             | lstr == "false" -> ParseOk [caseWarning] (Flag NoOptimisation)
-             | lstr == "true"  -> ParseOk [caseWarning] (Flag NormalOptimisation)
-             | otherwise       -> ParseFailed (NoParse name line)
-             where
-               lstr = lowercase str
-               caseWarning = PWarning $
-                 "The '" ++ name
-                 ++ "' field is case sensitive, use 'True' or 'False'.")
-       ,liftField configDebugInfo (\v flags -> flags { configDebugInfo = v }) $
-        let name = "debug-info" in
-        FieldDescr name
-          (\f -> case f of
+                   _                        -> Disp.empty
+                 )
+                 ( \line str _ -> case () of
+                   _
+                     | str == "False"
+                     -> ParseOk [] (Flag NoOptimisation)
+                     | str == "True"
+                     -> ParseOk [] (Flag NormalOptimisation)
+                     | str == "0"
+                     -> ParseOk [] (Flag NoOptimisation)
+                     | str == "1"
+                     -> ParseOk [] (Flag NormalOptimisation)
+                     | str == "2"
+                     -> ParseOk [] (Flag MaximumOptimisation)
+                     | lstr == "false"
+                     -> ParseOk [caseWarning] (Flag NoOptimisation)
+                     | lstr == "true"
+                     -> ParseOk [caseWarning] (Flag NormalOptimisation)
+                     | otherwise
+                     -> ParseFailed (NoParse name line)
+                     where
+                       lstr = lowercase str
+                       caseWarning =
+                         PWarning
+                           $ "The '"
+                           ++ name
+                           ++ "' field is case sensitive, use 'True' or 'False'."
+                 )
+         , liftField configDebugInfo (\v flags -> flags { configDebugInfo = v })
+           $ let
+               name = "debug-info"
+             in
+               FieldDescr
+                 name
+                 ( \f -> case f of
                    Flag NoDebugInfo      -> Disp.text "False"
                    Flag MinimalDebugInfo -> Disp.text "1"
                    Flag NormalDebugInfo  -> Disp.text "True"
                    Flag MaximalDebugInfo -> Disp.text "3"
-                   _                     -> Disp.empty)
-          (\line str _ -> case () of
-           _ |  str == "False" -> ParseOk [] (Flag NoDebugInfo)
-             |  str == "True"  -> ParseOk [] (Flag NormalDebugInfo)
-             |  str == "0"     -> ParseOk [] (Flag NoDebugInfo)
-             |  str == "1"     -> ParseOk [] (Flag MinimalDebugInfo)
-             |  str == "2"     -> ParseOk [] (Flag NormalDebugInfo)
-             |  str == "3"     -> ParseOk [] (Flag MaximalDebugInfo)
-             | lstr == "false" -> ParseOk [caseWarning] (Flag NoDebugInfo)
-             | lstr == "true"  -> ParseOk [caseWarning] (Flag NormalDebugInfo)
-             | otherwise       -> ParseFailed (NoParse name line)
-             where
-               lstr = lowercase str
-               caseWarning = PWarning $
-                 "The '" ++ name
-                 ++ "' field is case sensitive, use 'True' or 'False'.")
-       ]
+                   _                     -> Disp.empty
+                 )
+                 ( \line str _ -> case () of
+                   _
+                     | str == "False"
+                     -> ParseOk [] (Flag NoDebugInfo)
+                     | str == "True"
+                     -> ParseOk [] (Flag NormalDebugInfo)
+                     | str == "0"
+                     -> ParseOk [] (Flag NoDebugInfo)
+                     | str == "1"
+                     -> ParseOk [] (Flag MinimalDebugInfo)
+                     | str == "2"
+                     -> ParseOk [] (Flag NormalDebugInfo)
+                     | str == "3"
+                     -> ParseOk [] (Flag MaximalDebugInfo)
+                     | lstr == "false"
+                     -> ParseOk [caseWarning] (Flag NoDebugInfo)
+                     | lstr == "true"
+                     -> ParseOk [caseWarning] (Flag NormalDebugInfo)
+                     | otherwise
+                     -> ParseFailed (NoParse name line)
+                     where
+                       lstr = lowercase str
+                       caseWarning =
+                         PWarning
+                           $ "The '"
+                           ++ name
+                           ++ "' field is case sensitive, use 'True' or 'False'."
+                 )
+         ]
 
-  ++ toSavedConfig liftConfigExFlag
-       (configureExOptions ParseArgs src)
-       [] []
+    ++ toSavedConfig liftConfigExFlag (configureExOptions ParseArgs src) [] []
 
-  ++ toSavedConfig liftInstallFlag
-       (installOptions ParseArgs)
-       ["dry-run", "only", "only-dependencies", "dependencies-only"] []
+    ++ toSavedConfig
+         liftInstallFlag
+         (installOptions ParseArgs)
+         ["dry-run", "only", "only-dependencies", "dependencies-only"]
+         []
 
-  ++ toSavedConfig liftUploadFlag
-       (commandOptions uploadCommand ParseArgs)
-       ["verbose", "check", "documentation", "publish"] []
+    ++ toSavedConfig liftUploadFlag
+                     (commandOptions uploadCommand ParseArgs)
+                     ["verbose", "check", "documentation", "publish"]
+                     []
 
-  ++ toSavedConfig liftReportFlag
-       (commandOptions reportCommand ParseArgs)
-       ["verbose", "username", "password"] []
+    ++ toSavedConfig liftReportFlag
+                     (commandOptions reportCommand ParseArgs)
+                     ["verbose", "username", "password"]
+                     []
        --FIXME: this is a hack, hiding the user name and password.
        -- But otherwise it masks the upload ones. Either need to
        -- share the options or make then distinct. In any case
        -- they should probably be per-server.
 
-  ++ [ viewAsFieldDescr
-       $ optionDistPref
-       (configDistPref . savedConfigureFlags)
-       (\distPref config ->
-          config
-          { savedConfigureFlags = (savedConfigureFlags config) {
-               configDistPref = distPref }
-          , savedHaddockFlags = (savedHaddockFlags config) {
-               haddockDistPref = distPref }
-          }
-       )
-       ParseArgs
-     ]
-
+    ++ [ viewAsFieldDescr $ optionDistPref
+         (configDistPref . savedConfigureFlags)
+         ( \distPref config -> config
+           { savedConfigureFlags = (savedConfigureFlags config)
+             { configDistPref = distPref
+             }
+           , savedHaddockFlags   = (savedHaddockFlags config)
+             { haddockDistPref = distPref
+             }
+           }
+         )
+         ParseArgs
+       ]
   where
     toSavedConfig lift options exclusions replacements =
       [ lift (fromMaybe field replacement)
       | opt <- options
       , let field       = viewAsFieldDescr opt
             name        = fieldName field
-            replacement = find ((== name) . fieldName) replacements
-      , name `notElem` exclusions ]
+            replacement = find ((==name) . fieldName) replacements
+      , name `notElem` exclusions
+      ]
     optional = Parse.option mempty . fmap toFlag
 
 
     showRelaxDeps Nothing              = mempty
     showRelaxDeps (Just RelaxDepsNone) = Disp.text "False"
-    showRelaxDeps (Just _)             = Disp.text "True"
+    showRelaxDeps (Just _            ) = Disp.text "True"
 
     toRelaxDeps True  = RelaxDepsAll
     toRelaxDeps False = RelaxDepsNone
@@ -785,167 +850,192 @@ configFieldDescriptions src =
 --
 deprecatedFieldDescriptions :: [FieldDescr SavedConfig]
 deprecatedFieldDescriptions =
-  [ liftGlobalFlag $
-    listField "repos"
-      (Disp.text . showRepo) parseRepo
+  [ liftGlobalFlag $ listField
+      "repos"
+      (Disp.text . showRepo)
+      parseRepo
       (fromNubList . globalRemoteRepos)
       (\rs cfg -> cfg { globalRemoteRepos = toNubList rs })
-  , liftGlobalFlag $
-    simpleField "cachedir"
-      (Disp.text . fromFlagOrDefault "") (optional parseFilePathQ)
-      globalCacheDir    (\d cfg -> cfg { globalCacheDir = d })
-  , liftUploadFlag $
-    simpleField "hackage-username"
+    , liftGlobalFlag $ simpleField "cachedir"
+                                   (Disp.text . fromFlagOrDefault "")
+                                   (optional parseFilePathQ)
+                                   globalCacheDir
+                                   (\d cfg -> cfg { globalCacheDir = d })
+    , liftUploadFlag $ simpleField
+      "hackage-username"
       (Disp.text . fromFlagOrDefault "" . fmap unUsername)
       (optional (fmap Username parseTokenQ))
-      uploadUsername    (\d cfg -> cfg { uploadUsername = d })
-  , liftUploadFlag $
-    simpleField "hackage-password"
+      uploadUsername
+      (\d cfg -> cfg { uploadUsername = d })
+    , liftUploadFlag $ simpleField
+      "hackage-password"
       (Disp.text . fromFlagOrDefault "" . fmap unPassword)
       (optional (fmap Password parseTokenQ))
-      uploadPassword    (\d cfg -> cfg { uploadPassword = d })
-  , liftUploadFlag $
-    spaceListField "hackage-password-command"
-      Disp.text parseTokenQ
+      uploadPassword
+      (\d cfg -> cfg { uploadPassword = d })
+    , liftUploadFlag $ spaceListField
+      "hackage-password-command"
+      Disp.text
+      parseTokenQ
       (fromFlagOrDefault [] . uploadPasswordCmd)
-                        (\d cfg -> cfg { uploadPasswordCmd = Flag d })
-  ]
- ++ map (modifyFieldName ("user-"++)   . liftUserInstallDirs)   installDirsFields
- ++ map (modifyFieldName ("global-"++) . liftGlobalInstallDirs) installDirsFields
+      (\d cfg -> cfg { uploadPasswordCmd = Flag d })
+    ]
+    ++ map (modifyFieldName ("user-"++) . liftUserInstallDirs) installDirsFields
+    ++ map (modifyFieldName ("global-"++) . liftGlobalInstallDirs)
+           installDirsFields
   where
     optional = Parse.option mempty . fmap toFlag
     modifyFieldName :: (String -> String) -> FieldDescr a -> FieldDescr a
     modifyFieldName f d = d { fieldName = f (fieldName d) }
 
-liftUserInstallDirs :: FieldDescr (InstallDirs (Flag PathTemplate))
-                    -> FieldDescr SavedConfig
+liftUserInstallDirs
+  :: FieldDescr (InstallDirs (Flag PathTemplate)) -> FieldDescr SavedConfig
 liftUserInstallDirs = liftField
-  savedUserInstallDirs (\flags conf -> conf { savedUserInstallDirs = flags })
+  savedUserInstallDirs
+  (\flags conf -> conf { savedUserInstallDirs = flags })
 
-liftGlobalInstallDirs :: FieldDescr (InstallDirs (Flag PathTemplate))
-                      -> FieldDescr SavedConfig
+liftGlobalInstallDirs
+  :: FieldDescr (InstallDirs (Flag PathTemplate)) -> FieldDescr SavedConfig
 liftGlobalInstallDirs = liftField
-  savedGlobalInstallDirs (\flags conf -> conf { savedGlobalInstallDirs = flags })
+  savedGlobalInstallDirs
+  (\flags conf -> conf { savedGlobalInstallDirs = flags })
 
 liftGlobalFlag :: FieldDescr GlobalFlags -> FieldDescr SavedConfig
-liftGlobalFlag = liftField
-  savedGlobalFlags (\flags conf -> conf { savedGlobalFlags = flags })
+liftGlobalFlag =
+  liftField savedGlobalFlags (\flags conf -> conf { savedGlobalFlags = flags })
 
 liftConfigFlag :: FieldDescr ConfigFlags -> FieldDescr SavedConfig
 liftConfigFlag = liftField
-  savedConfigureFlags (\flags conf -> conf { savedConfigureFlags = flags })
+  savedConfigureFlags
+  (\flags conf -> conf { savedConfigureFlags = flags })
 
 liftConfigExFlag :: FieldDescr ConfigExFlags -> FieldDescr SavedConfig
 liftConfigExFlag = liftField
-  savedConfigureExFlags (\flags conf -> conf { savedConfigureExFlags = flags })
+  savedConfigureExFlags
+  (\flags conf -> conf { savedConfigureExFlags = flags })
 
 liftInstallFlag :: FieldDescr InstallFlags -> FieldDescr SavedConfig
 liftInstallFlag = liftField
-  savedInstallFlags (\flags conf -> conf { savedInstallFlags = flags })
+  savedInstallFlags
+  (\flags conf -> conf { savedInstallFlags = flags })
 
 liftUploadFlag :: FieldDescr UploadFlags -> FieldDescr SavedConfig
-liftUploadFlag = liftField
-  savedUploadFlags (\flags conf -> conf { savedUploadFlags = flags })
+liftUploadFlag =
+  liftField savedUploadFlags (\flags conf -> conf { savedUploadFlags = flags })
 
 liftReportFlag :: FieldDescr ReportFlags -> FieldDescr SavedConfig
-liftReportFlag = liftField
-  savedReportFlags (\flags conf -> conf { savedReportFlags = flags })
+liftReportFlag =
+  liftField savedReportFlags (\flags conf -> conf { savedReportFlags = flags })
 
-parseConfig :: ConstraintSource
-            -> SavedConfig
-            -> String
-            -> ParseResult SavedConfig
+parseConfig
+  :: ConstraintSource -> SavedConfig -> String -> ParseResult SavedConfig
 parseConfig src initial = \str -> do
   fields <- readFields str
   let (knownSections, others) = partition isKnownSection fields
   config <- parse others
   let user0   = savedUserInstallDirs config
       global0 = savedGlobalInstallDirs config
-  (remoteRepoSections0, haddockFlags, user, global, paths, args) <-
-    foldM parseSections
-          ([], savedHaddockFlags config, user0, global0, [], [])
-          knownSections
+  (remoteRepoSections0, haddockFlags, user, global, paths, args) <- foldM
+    parseSections
+    ([], savedHaddockFlags config, user0, global0, [], [])
+    knownSections
 
   let remoteRepoSections =
-          map addInfoForKnownRepos
-        . reverse
-        . nubBy ((==) `on` remoteRepoName)
-        $ remoteRepoSections0
+        map addInfoForKnownRepos
+          . reverse
+          . nubBy ((==) `on` remoteRepoName)
+          $ remoteRepoSections0
 
-  return config {
-    savedGlobalFlags       = (savedGlobalFlags config) {
-       globalRemoteRepos   = toNubList remoteRepoSections
-       },
-    savedConfigureFlags    = (savedConfigureFlags config) {
-       configProgramPaths  = paths,
-       configProgramArgs   = args
-       },
-    savedHaddockFlags      = haddockFlags,
-    savedUserInstallDirs   = user,
-    savedGlobalInstallDirs = global
-  }
-
+  return config
+    { savedGlobalFlags       = (savedGlobalFlags config)
+      { globalRemoteRepos = toNubList remoteRepoSections
+      }
+    , savedConfigureFlags    = (savedConfigureFlags config)
+      { configProgramPaths = paths
+      , configProgramArgs  = args
+      }
+    , savedHaddockFlags      = haddockFlags
+    , savedUserInstallDirs   = user
+    , savedGlobalInstallDirs = global
+    }
   where
-    isKnownSection (ParseUtils.Section _ "repository" _ _)              = True
-    isKnownSection (ParseUtils.F _ "remote-repo" _)                     = True
-    isKnownSection (ParseUtils.Section _ "haddock" _ _)                 = True
-    isKnownSection (ParseUtils.Section _ "install-dirs" _ _)            = True
-    isKnownSection (ParseUtils.Section _ "program-locations" _ _)       = True
+    isKnownSection (ParseUtils.Section _ "repository" _ _             ) = True
+    isKnownSection (ParseUtils.F _ "remote-repo" _                    ) = True
+    isKnownSection (ParseUtils.Section _ "haddock"                 _ _) = True
+    isKnownSection (ParseUtils.Section _ "install-dirs"            _ _) = True
+    isKnownSection (ParseUtils.Section _ "program-locations"       _ _) = True
     isKnownSection (ParseUtils.Section _ "program-default-options" _ _) = True
     isKnownSection _                                                    = False
 
-    parse = parseFields (configFieldDescriptions src
-                      ++ deprecatedFieldDescriptions) initial
+    parse = parseFields
+      (configFieldDescriptions src ++ deprecatedFieldDescriptions)
+      initial
 
-    parseSections (rs, h, u, g, p, a)
-                 (ParseUtils.Section _ "repository" name fs) = do
-      r' <- parseFields remoteRepoFields (emptyRemoteRepo name) fs
-      when (remoteRepoKeyThreshold r' > length (remoteRepoRootKeys r')) $
-        warning $ "'key-threshold' for repository " ++ show (remoteRepoName r')
-               ++ " higher than number of keys"
-      when (not (null (remoteRepoRootKeys r'))
-            && remoteRepoSecure r' /= Just True) $
-        warning $ "'root-keys' for repository " ++ show (remoteRepoName r')
-               ++ " non-empty, but 'secure' not set to True."
-      return (r':rs, h, u, g, p, a)
+    parseSections (rs, h, u, g, p, a) (ParseUtils.Section _ "repository" name fs)
+      = do
+        r' <- parseFields remoteRepoFields (emptyRemoteRepo name) fs
+        when (remoteRepoKeyThreshold r' > length (remoteRepoRootKeys r'))
+          $  warning
+          $  "'key-threshold' for repository "
+          ++ show (remoteRepoName r')
+          ++ " higher than number of keys"
+        when
+            ( not (null (remoteRepoRootKeys r')) && remoteRepoSecure r' /= Just
+              True
+            )
+          $  warning
+          $  "'root-keys' for repository "
+          ++ show (remoteRepoName r')
+          ++ " non-empty, but 'secure' not set to True."
+        return (r' : rs, h, u, g, p, a)
 
-    parseSections (rs, h, u, g, p, a)
-                 (ParseUtils.F lno "remote-repo" raw) = do
+    parseSections (rs, h, u, g, p, a) (ParseUtils.F lno "remote-repo" raw) = do
       let mr' = readRepo raw
       r' <- maybe (ParseFailed $ NoParse "remote-repo" lno) return mr'
-      return (r':rs, h, u, g, p, a)
+      return (r' : rs, h, u, g, p, a)
 
-    parseSections accum@(rs, h, u, g, p, a)
-                 (ParseUtils.Section _ "haddock" name fs)
-      | name == ""        = do h' <- parseFields haddockFlagsFields h fs
-                               return (rs, h', u, g, p, a)
-      | otherwise         = do
-          warning "The 'haddock' section should be unnamed"
-          return accum
-    parseSections accum@(rs, h, u, g, p, a)
-                  (ParseUtils.Section _ "install-dirs" name fs)
-      | name' == "user"   = do u' <- parseFields installDirsFields u fs
-                               return (rs, h, u', g, p, a)
-      | name' == "global" = do g' <- parseFields installDirsFields g fs
-                               return (rs, h, u, g', p, a)
-      | otherwise         = do
-          warning "The 'install-paths' section should be for 'user' or 'global'"
-          return accum
-      where name' = lowercase name
-    parseSections accum@(rs, h, u, g, p, a)
-                 (ParseUtils.Section _ "program-locations" name fs)
-      | name == ""        = do p' <- parseFields withProgramsFields p fs
-                               return (rs, h, u, g, p', a)
-      | otherwise         = do
-          warning "The 'program-locations' section should be unnamed"
-          return accum
-    parseSections accum@(rs, h, u, g, p, a)
-                  (ParseUtils.Section _ "program-default-options" name fs)
-      | name == ""        = do a' <- parseFields withProgramOptionsFields a fs
-                               return (rs, h, u, g, p, a')
-      | otherwise         = do
-          warning "The 'program-default-options' section should be unnamed"
-          return accum
+    parseSections accum@(rs, h, u, g, p, a) (ParseUtils.Section _ "haddock" name fs)
+      | name == ""
+      = do
+        h' <- parseFields haddockFlagsFields h fs
+        return (rs, h', u, g, p, a)
+      | otherwise
+      = do
+        warning "The 'haddock' section should be unnamed"
+        return accum
+    parseSections accum@(rs, h, u, g, p, a) (ParseUtils.Section _ "install-dirs" name fs)
+      | name' == "user"
+      = do
+        u' <- parseFields installDirsFields u fs
+        return (rs, h, u', g, p, a)
+      | name' == "global"
+      = do
+        g' <- parseFields installDirsFields g fs
+        return (rs, h, u, g', p, a)
+      | otherwise
+      = do
+        warning "The 'install-paths' section should be for 'user' or 'global'"
+        return accum
+      where
+        name' = lowercase name
+    parseSections accum@(rs, h, u, g, p, a) (ParseUtils.Section _ "program-locations" name fs)
+      | name == ""
+      = do
+        p' <- parseFields withProgramsFields p fs
+        return (rs, h, u, g, p', a)
+      | otherwise
+      = do
+        warning "The 'program-locations' section should be unnamed"
+        return accum
+    parseSections accum@(rs, h, u, g, p, a) (ParseUtils.Section _ "program-default-options" name fs)
+      | name == ""
+      = do
+        a' <- parseFields withProgramOptionsFields a fs
+        return (rs, h, u, g, p, a')
+      | otherwise
+      = do
+        warning "The 'program-default-options' section should be unnamed"
+        return accum
     parseSections accum f = do
       warning $ "Unrecognized stanza on line " ++ show (lineNo f)
       return accum
@@ -954,75 +1044,102 @@ showConfig :: SavedConfig -> String
 showConfig = showConfigWithComments mempty
 
 showConfigWithComments :: SavedConfig -> SavedConfig -> String
-showConfigWithComments comment vals = Disp.render $
-      case fmap ppRemoteRepoSection . fromNubList . globalRemoteRepos
-           . savedGlobalFlags $ vals of
-        [] -> Disp.text ""
-        (x:xs) -> foldl' (\ r r' -> r $+$ Disp.text "" $+$ r') x xs
-  $+$ Disp.text ""
-  $+$ ppFields (skipSomeFields (configFieldDescriptions ConstraintSourceUnknown))
-               mcomment vals
-  $+$ Disp.text ""
-  $+$ ppSection "haddock" "" haddockFlagsFields
-                (fmap savedHaddockFlags mcomment) (savedHaddockFlags vals)
-  $+$ Disp.text ""
-  $+$ installDirsSection "user"   savedUserInstallDirs
-  $+$ Disp.text ""
-  $+$ installDirsSection "global" savedGlobalInstallDirs
-  $+$ Disp.text ""
-  $+$ configFlagsSection "program-locations" withProgramsFields
-                         configProgramPaths
-  $+$ Disp.text ""
-  $+$ configFlagsSection "program-default-options" withProgramOptionsFields
-                         configProgramArgs
+showConfigWithComments comment vals =
+  Disp.render
+    $   case
+          fmap ppRemoteRepoSection
+            . fromNubList
+            . globalRemoteRepos
+            . savedGlobalFlags
+            $ vals
+        of
+          []     -> Disp.text ""
+          (x:xs) -> foldl' (\r r' -> r $+$ Disp.text "" $+$ r') x xs
+    $+$ Disp.text ""
+    $+$ ppFields
+          (skipSomeFields (configFieldDescriptions ConstraintSourceUnknown))
+          mcomment
+          vals
+    $+$ Disp.text ""
+    $+$ ppSection "haddock"
+                  ""
+                  haddockFlagsFields
+                  (fmap savedHaddockFlags mcomment)
+                  (savedHaddockFlags vals)
+    $+$ Disp.text ""
+    $+$ installDirsSection "user" savedUserInstallDirs
+    $+$ Disp.text ""
+    $+$ installDirsSection "global" savedGlobalInstallDirs
+    $+$ Disp.text ""
+    $+$ configFlagsSection "program-locations"
+                           withProgramsFields
+                           configProgramPaths
+    $+$ Disp.text ""
+    $+$ configFlagsSection "program-default-options"
+                           withProgramOptionsFields
+                           configProgramArgs
   where
     mcomment = Just comment
-    installDirsSection name field =
-      ppSection "install-dirs" name installDirsFields
-                (fmap field mcomment) (field vals)
-    configFlagsSection name fields field =
-      ppSection name "" fields
-               (fmap (field . savedConfigureFlags) mcomment)
-               ((field . savedConfigureFlags) vals)
+    installDirsSection name field = ppSection "install-dirs"
+                                              name
+                                              installDirsFields
+                                              (fmap field mcomment)
+                                              (field vals)
+    configFlagsSection name fields field = ppSection
+      name
+      ""
+      fields
+      (fmap (field . savedConfigureFlags) mcomment)
+      ((field . savedConfigureFlags) vals)
 
     -- skip fields based on field name.  currently only skips "remote-repo",
     -- because that is rendered as a section.  (see 'ppRemoteRepoSection'.)
-    skipSomeFields = filter ((/= "remote-repo") . fieldName)
+    skipSomeFields = filter ((/="remote-repo") . fieldName)
 
 -- | Fields for the 'install-dirs' sections.
 installDirsFields :: [FieldDescr (InstallDirs (Flag PathTemplate))]
 installDirsFields = map viewAsFieldDescr installDirsOptions
 
 ppRemoteRepoSection :: RemoteRepo -> Doc
-ppRemoteRepoSection vals = ppSection "repository" (remoteRepoName vals)
-        remoteRepoFields def vals
+ppRemoteRepoSection vals = ppSection "repository"
+                                     (remoteRepoName vals)
+                                     remoteRepoFields
+                                     def
+                                     vals
   where
     def = Just (emptyRemoteRepo "ignored") { remoteRepoSecure = Just False }
 
 remoteRepoFields :: [FieldDescr RemoteRepo]
 remoteRepoFields =
-    [ simpleField "url"
-        (text . show)            (parseTokenQ >>= parseURI')
-        remoteRepoURI            (\x repo -> repo { remoteRepoURI = x })
-    , simpleField "secure"
-        showSecure               (Just `fmap` Text.parse)
-        remoteRepoSecure         (\x repo -> repo { remoteRepoSecure = x })
-    , listField "root-keys"
-        text                     parseTokenQ
-        remoteRepoRootKeys       (\x repo -> repo { remoteRepoRootKeys = x })
-    , simpleField "key-threshold"
-        showThreshold            Text.parse
-        remoteRepoKeyThreshold   (\x repo -> repo { remoteRepoKeyThreshold = x })
-    ]
+  [ simpleField "url"
+                (text . show)
+                (parseTokenQ >>= parseURI')
+                remoteRepoURI
+                (\x repo -> repo { remoteRepoURI = x })
+  , simpleField "secure"
+                showSecure
+                (Just `fmap` Text.parse)
+                remoteRepoSecure
+                (\x repo -> repo { remoteRepoSecure = x })
+  , listField "root-keys"
+              text
+              parseTokenQ
+              remoteRepoRootKeys
+              (\x repo -> repo { remoteRepoRootKeys = x })
+  , simpleField "key-threshold"
+                showThreshold
+                Text.parse
+                remoteRepoKeyThreshold
+                (\x repo -> repo { remoteRepoKeyThreshold = x })
+  ]
   where
-    parseURI' uriString =
-      case parseURI uriString of
-        Nothing  -> fail $ "remote-repo: no parse on " ++ show uriString
-        Just uri -> return uri
+    parseURI' uriString = case parseURI uriString of
+      Nothing  -> fail $ "remote-repo: no parse on " ++ show uriString
+      Just uri -> return uri
 
-    showSecure  Nothing      = mempty       -- default 'secure' setting
-    showSecure  (Just True)  = text "True"  -- user explicitly enabled it
-    showSecure  (Just False) = text "False" -- user explicitly disabled it
+    showSecure Nothing      = mempty       -- default 'secure' setting
+    showSecure (Just True ) = text "True"  -- user explicitly enabled it
+    showSecure (Just False) = text "False" -- user explicitly disabled it
 
     -- If the key-threshold is set to 0, we omit it as this is the default
     -- and it looks odd to have a value for key-threshold but not for 'secure'
@@ -1033,26 +1150,29 @@ remoteRepoFields =
 
 -- | Fields for the 'haddock' section.
 haddockFlagsFields :: [FieldDescr HaddockFlags]
-haddockFlagsFields = [ field
-                     | opt <- haddockOptions ParseArgs
-                     , let field = viewAsFieldDescr opt
-                           name  = fieldName field
-                     , name `notElem` exclusions ]
+haddockFlagsFields =
+  [ field
+  | opt <- haddockOptions ParseArgs
+  , let field = viewAsFieldDescr opt
+        name  = fieldName field
+  , name `notElem` exclusions
+  ]
   where
     exclusions = ["verbose", "builddir", "for-hackage"]
 
 -- | Fields for the 'program-locations' section.
 withProgramsFields :: [FieldDescr [(String, FilePath)]]
-withProgramsFields =
-  map viewAsFieldDescr $
-  programConfigurationPaths' (++ "-location") defaultProgramConfiguration
-                             ParseArgs id (++)
+withProgramsFields = map viewAsFieldDescr $ programConfigurationPaths'
+  (++"-location")
+  defaultProgramConfiguration
+  ParseArgs
+  id
+  (++)
 
 -- | Fields for the 'program-default-options' section.
 withProgramOptionsFields :: [FieldDescr [(String, [String])]]
-withProgramOptionsFields =
-  map viewAsFieldDescr $
-  programConfigurationOptions defaultProgramConfiguration ParseArgs id (++)
+withProgramOptionsFields = map viewAsFieldDescr
+  $ programConfigurationOptions defaultProgramConfiguration ParseArgs id (++)
 
 -- | Get the differences (as a pseudo code diff) between the user's
 -- '~/.cabal/config' and the one that cabal would generate if it didn't exist.
@@ -1060,53 +1180,55 @@ userConfigDiff :: GlobalFlags -> IO [String]
 userConfigDiff globalFlags = do
   userConfig <- loadConfig normal (globalConfigFile globalFlags)
   testConfig <- liftM2 mappend baseSavedConfig initialSavedConfig
-  return $ reverse . foldl' createDiff [] . M.toList
-                $ M.unionWith combine
-                    (M.fromList . map justFst $ filterShow testConfig)
-                    (M.fromList . map justSnd $ filterShow userConfig)
+  return $ reverse . foldl' createDiff [] . M.toList $ M.unionWith
+    combine
+    (M.fromList . map justFst $ filterShow testConfig)
+    (M.fromList . map justSnd $ filterShow userConfig)
   where
     justFst (a, b) = (a, (Just b, Nothing))
     justSnd (a, b) = (a, (Nothing, Just b))
 
-    combine (Nothing, Just b) (Just a, Nothing) = (Just a, Just b)
-    combine (Just a, Nothing) (Nothing, Just b) = (Just a, Just b)
-    combine x y = error $ "Can't happen : userConfigDiff "
-                  ++ show x ++ " " ++ show y
+    combine (Nothing, Just b ) (Just a , Nothing) = (Just a, Just b)
+    combine (Just a , Nothing) (Nothing, Just b ) = (Just a, Just b)
+    combine x y =
+      error $ "Can't happen : userConfigDiff " ++ show x ++ " " ++ show y
 
     createDiff :: [String] -> (String, (Maybe String, Maybe String)) -> [String]
     createDiff acc (key, (Just a, Just b))
-        | a == b = acc
-        | otherwise = ("+ " ++ key ++ ": " ++ b)
-                      : ("- " ++ key ++ ": " ++ a) : acc
-    createDiff acc (key, (Nothing, Just b)) = ("+ " ++ key ++ ": " ++ b) : acc
-    createDiff acc (key, (Just a, Nothing)) = ("- " ++ key ++ ": " ++ a) : acc
-    createDiff acc (_, (Nothing, Nothing)) = acc
+      | a == b
+      = acc
+      | otherwise
+      = ("+ " ++ key ++ ": " ++ b) : ("- " ++ key ++ ": " ++ a) : acc
+    createDiff acc (key, (Nothing, Just b) ) = ("+ " ++ key ++ ": " ++ b) : acc
+    createDiff acc (key, (Just a, Nothing) ) = ("- " ++ key ++ ": " ++ a) : acc
+    createDiff acc (_  , (Nothing, Nothing)) = acc
 
     filterShow :: SavedConfig -> [(String, String)]
-    filterShow cfg = map keyValueSplit
-        . filter (\s -> not (null s) && any (== ':') s)
+    filterShow cfg =
+      map keyValueSplit
+        . filter (\s -> not (null s) && any (==':') s)
         . map nonComment
         . lines
         $ showConfig cfg
 
-    nonComment [] = []
-    nonComment ('-':'-':_) = []
-    nonComment (x:xs) = x : nonComment xs
+    nonComment []           = []
+    nonComment ('-':'-':_ ) = []
+    nonComment (x      :xs) = x : nonComment xs
 
     topAndTail = reverse . dropWhile isSpace . reverse . dropWhile isSpace
 
     keyValueSplit s =
-        let (left, right) = break (== ':') s
-        in (topAndTail left, topAndTail (drop 1 right))
+      let (left, right) = break (==':') s
+      in  (topAndTail left, topAndTail (drop 1 right))
 
 
 -- | Update the user's ~/.cabal/config' keeping the user's customizations.
 userConfigUpdate :: Verbosity -> GlobalFlags -> IO ()
 userConfigUpdate verbosity globalFlags = do
-  userConfig <- loadConfig normal (globalConfigFile globalFlags)
-  newConfig <- liftM2 mappend baseSavedConfig initialSavedConfig
+  userConfig  <- loadConfig normal (globalConfigFile globalFlags)
+  newConfig   <- liftM2 mappend baseSavedConfig initialSavedConfig
   commentConf <- commentSavedConfig
-  cabalFile <- getConfigFilePath $ globalConfigFile globalFlags
+  cabalFile   <- getConfigFilePath $ globalConfigFile globalFlags
   let backup = cabalFile ++ ".backup"
   notice verbosity $ "Renaming " ++ cabalFile ++ " to " ++ backup ++ "."
   renameFile cabalFile backup

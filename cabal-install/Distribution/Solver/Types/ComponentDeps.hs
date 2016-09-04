@@ -147,18 +147,21 @@ flatDeps = fold
 -- Prior to the introduction of setup dependencies in version 1.24 this
 -- would have been _all_ dependencies.
 nonSetupDeps :: Monoid a => ComponentDeps a -> a
-nonSetupDeps = select (/= ComponentSetup)
+nonSetupDeps = select (/=ComponentSetup)
 
 -- | Library dependencies proper only.  (Includes dependencies
 -- of internal libraries.)
 libraryDeps :: Monoid a => ComponentDeps a -> a
-libraryDeps = select (\c -> case c of ComponentSubLib _ -> True
-                                      ComponentLib -> True
-                                      _ -> False)
+libraryDeps = select
+  ( \c -> case c of
+    ComponentSubLib _ -> True
+    ComponentLib      -> True
+    _                 -> False
+  )
 
 -- | Setup dependencies.
 setupDeps :: Monoid a => ComponentDeps a -> a
-setupDeps = select (== ComponentSetup)
+setupDeps = select (==ComponentSetup)
 
 -- | Select dependencies satisfying a given predicate.
 select :: Monoid a => (Component -> Bool) -> ComponentDeps a -> a

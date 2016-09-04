@@ -181,13 +181,10 @@ import           System.Directory (doesDirectoryExist)
 
 -- | Check that an 'ElaboratedConfiguredPackage' actually makes
 -- sense under some 'ElaboratedSharedConfig'.
-sanityCheckElaboratedConfiguredPackage :: ElaboratedSharedConfig
-                                       -> ElaboratedConfiguredPackage
-                                       -> a
-                                       -> a
-sanityCheckElaboratedConfiguredPackage sharedConfig
-                                       pkg@ElaboratedConfiguredPackage{..}
-                                       ret =
+sanityCheckElaboratedConfiguredPackage
+  :: ElaboratedSharedConfig -> ElaboratedConfiguredPackage -> a -> a
+sanityCheckElaboratedConfiguredPackage sharedConfig pkg@ElaboratedConfiguredPackage {..} ret
+  =
 
     -- we should only have enabled stanzas that actually can be built
     -- (according to the solver)
@@ -195,26 +192,34 @@ sanityCheckElaboratedConfiguredPackage sharedConfig
 
     -- the stanzas that the user explicitly requested should be
     -- enabled (by the previous test, they are also available)
-  . assert (Map.keysSet (Map.filter id pkgStanzasRequested)
-                `Set.isSubsetOf` pkgStanzasEnabled)
+  . assert
+      (                Map.keysSet (Map.filter id pkgStanzasRequested)
+      `Set.isSubsetOf` pkgStanzasEnabled
+      )
 
     -- the stanzas explicitly disabled should not be available
-  . assert (Set.null (Map.keysSet (Map.filter not pkgStanzasRequested)
-                `Set.intersection` pkgStanzasAvailable))
+  . assert
+      ( Set.null
+        (                  Map.keysSet (Map.filter not pkgStanzasRequested)
+        `Set.intersection` pkgStanzasAvailable
+        )
+      )
 
     -- either a package is being built inplace, or the
     -- 'installedPackageId' we assigned is consistent with
     -- the 'hashedInstalledPackageId' we would compute from
     -- the elaborated configured package
-  . assert (pkgBuildStyle == BuildInplaceOnly ||
-     installedPackageId pkg == hashedInstalledPackageId
-                                 (packageHashInputs sharedConfig pkg))
+  . assert
+      (  pkgBuildStyle
+      == BuildInplaceOnly
+      || installedPackageId pkg
+      == hashedInstalledPackageId (packageHashInputs sharedConfig pkg)
+      )
 
     -- either a package is built inplace, or we are not attempting to
     -- build any test suites or benchmarks (we never build these
     -- for remote packages!)
-  . assert (pkgBuildStyle == BuildInplaceOnly ||
-     Set.null pkgStanzasAvailable)
+  . assert (pkgBuildStyle == BuildInplaceOnly || Set.null pkgStanzasAvailable)
 
   $ ret
 
@@ -236,63 +241,61 @@ sanityCheckElaboratedConfiguredPackage sharedConfig
 -- command needs the source package info to know about flag choices and
 -- dependencies of executables and setup scripts.
 --
-rebuildInstallPlan :: Verbosity
-                   -> FilePath -> DistDirLayout -> CabalDirLayout
-                   -> ProjectConfig
-                   -> IO ( ElaboratedInstallPlan  -- with store packages
-                         , ElaboratedInstallPlan  -- with source packages
-                         , ElaboratedSharedConfig
-                         , ProjectConfig )
+rebuildInstallPlan
+  :: Verbosity
+  -> FilePath
+  -> DistDirLayout
+  -> CabalDirLayout
+  -> ProjectConfig
+  -> IO
+       ( ElaboratedInstallPlan  -- with store packages
+       , ElaboratedInstallPlan  -- with source packages
+       , ElaboratedSharedConfig
+       , ProjectConfig
+       )
                       -- ^ @(improvedPlan, elaboratedPlan, _, _)@
-rebuildInstallPlan verbosity
-                   projectRootDir
-                   distDirLayout@DistDirLayout {
-                     distDirectory,
-                     distProjectCacheFile,
-                     distProjectCacheDirectory
-                   }
-                   cabalDirLayout@CabalDirLayout {
-                     cabalPackageCacheDirectory,
-                     cabalStoreDirectory,
-                     cabalStorePackageDB
-                   }
-                   cliConfig =
-    runRebuild projectRootDir $ do
+rebuildInstallPlan verbosity projectRootDir distDirLayout@DistDirLayout { distDirectory, distProjectCacheFile, distProjectCacheDirectory } cabalDirLayout@CabalDirLayout { cabalPackageCacheDirectory, cabalStoreDirectory, cabalStorePackageDB } cliConfig
+  = runRebuild projectRootDir $ do
     progsearchpath <- liftIO $ getSystemSearchPath
     let cliConfigPersistent = cliConfig { projectConfigBuildOnly = mempty }
 
     -- The overall improved plan is cached
-    rerunIfChanged verbosity fileMonitorImprovedPlan
+    rerunIfChanged verbosity
+                   fileMonitorImprovedPlan
                    -- react to changes in command line args and the path
-                   (cliConfigPersistent, progsearchpath) $ do
+                   (cliConfigPersistent, progsearchpath)
+      $ do
 
       -- And so is the elaborated plan that the improved plan based on
-      (elaboratedPlan, elaboratedShared,
-       projectConfig) <-
-        rerunIfChanged verbosity fileMonitorElaboratedPlan
-                       (cliConfigPersistent, progsearchpath) $ do
+          (elaboratedPlan, elaboratedShared, projectConfig) <-
+            rerunIfChanged verbosity
+                           fileMonitorElaboratedPlan
+                           (cliConfigPersistent, progsearchpath)
+              $ do
 
-          (projectConfig, projectConfigTransient) <- phaseReadProjectConfig
-          localPackages <- phaseReadLocalPackages projectConfig
-          compilerEtc   <- phaseConfigureCompiler projectConfig
-          _             <- phaseConfigurePrograms projectConfig compilerEtc
-          solverPlan    <- phaseRunSolver         projectConfigTransient
-                                                  compilerEtc localPackages
-          (elaboratedPlan,
-           elaboratedShared) <- phaseElaboratePlan projectConfigTransient
-                                                   compilerEtc
-                                                   solverPlan localPackages
-          return (elaboratedPlan, elaboratedShared, projectConfig)
+                  (projectConfig, projectConfigTransient) <-
+                    phaseReadProjectConfig
+                  localPackages <- phaseReadLocalPackages projectConfig
+                  compilerEtc <- phaseConfigureCompiler projectConfig
+                  _ <- phaseConfigurePrograms projectConfig compilerEtc
+                  solverPlan <- phaseRunSolver projectConfigTransient
+                                               compilerEtc
+                                               localPackages
+                  (elaboratedPlan, elaboratedShared) <- phaseElaboratePlan
+                    projectConfigTransient
+                    compilerEtc
+                    solverPlan
+                    localPackages
+                  return (elaboratedPlan, elaboratedShared, projectConfig)
 
-      -- The improved plan changes each time we install something, whereas
-      -- the underlying elaborated plan only changes when input config
-      -- changes, so it's worth caching them separately.
-      improvedPlan <- phaseImprovePlan elaboratedPlan elaboratedShared
+          -- The improved plan changes each time we install something, whereas
+          -- the underlying elaborated plan only changes when input config
+          -- changes, so it's worth caching them separately.
+          improvedPlan <- phaseImprovePlan elaboratedPlan elaboratedShared
 
-      phaseMaintainPlanOutputs improvedPlan elaboratedPlan elaboratedShared
+          phaseMaintainPlanOutputs improvedPlan elaboratedPlan elaboratedShared
 
-      return (improvedPlan, elaboratedPlan, elaboratedShared, projectConfig)
-
+          return (improvedPlan, elaboratedPlan, elaboratedShared, projectConfig)
   where
     fileMonitorCompiler       = newFileMonitorInCacheDir "compiler"
     fileMonitorSolverPlan     = newFileMonitorInCacheDir "solver-plan"
@@ -301,7 +304,7 @@ rebuildInstallPlan verbosity
     fileMonitorImprovedPlan   = newFileMonitorInCacheDir "improved-plan"
 
     newFileMonitorInCacheDir :: Eq a => FilePath -> FileMonitor a b
-    newFileMonitorInCacheDir  = newFileMonitor . distProjectCacheFile
+    newFileMonitorInCacheDir = newFileMonitor . distProjectCacheFile
 
     -- Read the cabal.project (or implicit config) and combine it with
     -- arguments from the command line
@@ -311,7 +314,9 @@ rebuildInstallPlan verbosity
       liftIO $ do
         info verbosity "Project settings changed, reconfiguring..."
         createDirectoryIfMissingVerbose verbosity False distDirectory
-        createDirectoryIfMissingVerbose verbosity False distProjectCacheDirectory
+        createDirectoryIfMissingVerbose verbosity
+                                        False
+                                        distProjectCacheDirectory
 
       projectConfig <- readProjectConfig verbosity projectRootDir
 
@@ -319,11 +324,9 @@ rebuildInstallPlan verbosity
       -- flags that we don't cache persistently (because like all "build only"
       -- flags they do not affect the value of the outcome) but that we do
       -- sometimes using during planning (in particular the http transport)
-      let projectConfigTransient  = projectConfig <> cliConfig
-          projectConfigPersistent = projectConfig
-                                 <> cliConfig {
-                                      projectConfigBuildOnly = mempty
-                                    }
+      let projectConfigTransient = projectConfig <> cliConfig
+          projectConfigPersistent =
+            projectConfig <> cliConfig { projectConfigBuildOnly = mempty }
       liftIO $ writeProjectConfigFile (distProjectCacheFile "config")
                                       projectConfigPersistent
       return (projectConfigPersistent, projectConfigTransient)
@@ -331,8 +334,7 @@ rebuildInstallPlan verbosity
     -- Look for all the cabal packages in the project
     -- some of which may be local src dirs, tarballs etc
     --
-    phaseReadLocalPackages :: ProjectConfig
-                           -> Rebuild [UnresolvedSourcePackage]
+    phaseReadLocalPackages :: ProjectConfig -> Rebuild [UnresolvedSourcePackage]
     phaseReadLocalPackages projectConfig = do
 
       localCabalFiles <- findProjectPackages projectRootDir projectConfig
@@ -344,53 +346,49 @@ rebuildInstallPlan verbosity
     -- This is moderately expensive and doesn't change that often so we cache
     -- it independently.
     --
-    phaseConfigureCompiler :: ProjectConfig
-                           -> Rebuild (Compiler, Platform, ProgramDb)
-    phaseConfigureCompiler ProjectConfig {
-                             projectConfigShared = ProjectConfigShared {
-                               projectConfigHcFlavor,
-                               projectConfigHcPath,
-                               projectConfigHcPkg
-                             },
-                             projectConfigLocalPackages = PackageConfig {
-                               packageConfigProgramPaths,
-                               packageConfigProgramArgs,
-                               packageConfigProgramPathExtra
-                             }
-                           } = do
+    phaseConfigureCompiler
+      :: ProjectConfig -> Rebuild (Compiler, Platform, ProgramDb)
+    phaseConfigureCompiler ProjectConfig { projectConfigShared = ProjectConfigShared { projectConfigHcFlavor, projectConfigHcPath, projectConfigHcPkg }, projectConfigLocalPackages = PackageConfig { packageConfigProgramPaths, packageConfigProgramArgs, packageConfigProgramPathExtra } }
+      = do
         progsearchpath <- liftIO $ getSystemSearchPath
-        rerunIfChanged verbosity fileMonitorCompiler
-                       (hcFlavor, hcPath, hcPkg, progsearchpath,
-                        packageConfigProgramPaths,
-                        packageConfigProgramArgs,
-                        packageConfigProgramPathExtra) $ do
+        rerunIfChanged
+            verbosity
+            fileMonitorCompiler
+            (hcFlavor, hcPath, hcPkg, progsearchpath, packageConfigProgramPaths, packageConfigProgramArgs, packageConfigProgramPathExtra)
+          $ do
 
-          liftIO $ info verbosity "Compiler settings changed, reconfiguring..."
-          result@(_, _, progdb') <- liftIO $
-            Cabal.configCompilerEx
-              hcFlavor hcPath hcPkg
-              progdb verbosity
+              liftIO $ info verbosity
+                            "Compiler settings changed, reconfiguring..."
+              result@(_, _, progdb') <- liftIO $ Cabal.configCompilerEx
+                hcFlavor
+                hcPath
+                hcPkg
+                progdb
+                verbosity
 
-        -- Note that we added the user-supplied program locations and args
-        -- for /all/ programs, not just those for the compiler prog and
-        -- compiler-related utils. In principle we don't know which programs
-        -- the compiler will configure (and it does vary between compilers).
-        -- We do know however that the compiler will only configure the
-        -- programs it cares about, and those are the ones we monitor here.
-          monitorFiles (programsMonitorFiles progdb')
+            -- Note that we added the user-supplied program locations and args
+            -- for /all/ programs, not just those for the compiler prog and
+            -- compiler-related utils. In principle we don't know which programs
+            -- the compiler will configure (and it does vary between compilers).
+            -- We do know however that the compiler will only configure the
+            -- programs it cares about, and those are the ones we monitor here.
+              monitorFiles (programsMonitorFiles progdb')
 
-          return result
+              return result
       where
         hcFlavor = flagToMaybe projectConfigHcFlavor
         hcPath   = flagToMaybe projectConfigHcPath
         hcPkg    = flagToMaybe projectConfigHcPkg
-        progdb   =
-            userSpecifyPaths (Map.toList (getMapLast packageConfigProgramPaths))
-          . userSpecifyArgss (Map.toList (getMapMappend packageConfigProgramArgs))
-          . modifyProgramSearchPath
-              (++ [ ProgramSearchPathDir dir
-                  | dir <- fromNubList packageConfigProgramPathExtra ])
-          $ defaultProgramDb
+        progdb =
+          userSpecifyPaths (Map.toList (getMapLast packageConfigProgramPaths))
+            . userSpecifyArgss
+                (Map.toList (getMapMappend packageConfigProgramArgs))
+            . modifyProgramSearchPath
+                ( ++[ ProgramSearchPathDir dir
+                    | dir <- fromNubList packageConfigProgramPathExtra
+                    ]
+                )
+            $ defaultProgramDb
 
 
     -- Configuring other programs.
@@ -405,17 +403,16 @@ rebuildInstallPlan verbosity
     -- all local packages, but that all the programs configured so far are the
     -- compiler program or related util programs.
     --
-    phaseConfigurePrograms :: ProjectConfig
-                           -> (Compiler, Platform, ProgramDb)
-                           -> Rebuild ()
+    phaseConfigurePrograms
+      :: ProjectConfig -> (Compiler, Platform, ProgramDb) -> Rebuild ()
     phaseConfigurePrograms projectConfig (_, _, compilerprogdb) = do
         -- Users are allowed to specify program locations independently for
         -- each package (e.g. to use a particular version of a pre-processor
         -- for some packages). However they cannot do this for the compiler
         -- itself as that's just not going to work. So we check for this.
-        liftIO $ checkBadPerPackageCompilerPaths
-          (configuredPrograms compilerprogdb)
-          (getMapMappend (projectConfigSpecificPackage projectConfig))
+      liftIO $ checkBadPerPackageCompilerPaths
+        (configuredPrograms compilerprogdb)
+        (getMapMappend (projectConfigSpecificPackage projectConfig))
 
         --TODO: [required eventually] find/configure other programs that the
         -- user specifies.
@@ -427,26 +424,26 @@ rebuildInstallPlan verbosity
     -- Run the solver to get the initial install plan.
     -- This is expensive so we cache it independently.
     --
-    phaseRunSolver :: ProjectConfig
-                   -> (Compiler, Platform, ProgramDb)
-                   -> [UnresolvedSourcePackage]
-                   -> Rebuild SolverInstallPlan
-    phaseRunSolver projectConfig@ProjectConfig {
-                     projectConfigShared,
-                     projectConfigBuildOnly
-                   }
-                   (compiler, platform, progdb)
-                   localPackages =
-        rerunIfChanged verbosity fileMonitorSolverPlan
-                       (solverSettings, cabalPackageCacheDirectory,
-                        localPackages, localPackagesEnabledStanzas,
-                        compiler, platform, programsDbSignature progdb) $ do
+    phaseRunSolver
+      :: ProjectConfig
+      -> (Compiler, Platform, ProgramDb)
+      -> [UnresolvedSourcePackage]
+      -> Rebuild SolverInstallPlan
+    phaseRunSolver projectConfig@ProjectConfig { projectConfigShared, projectConfigBuildOnly } (compiler, platform, progdb) localPackages
+      = rerunIfChanged
+          verbosity
+          fileMonitorSolverPlan
+          (solverSettings, cabalPackageCacheDirectory, localPackages, localPackagesEnabledStanzas, compiler, platform, programsDbSignature
+            progdb)
+      $ do
 
           installedPkgIndex <- getInstalledPackages verbosity
-                                                    compiler progdb platform
+                                                    compiler
+                                                    progdb
+                                                    platform
                                                     corePackageDbs
-          sourcePkgDb       <- getSourcePackages    verbosity withRepoCtx
-          pkgConfigDB       <- getPkgConfigDb      verbosity progdb
+          sourcePkgDb       <- getSourcePackages verbosity withRepoCtx
+          pkgConfigDB       <- getPkgConfigDb verbosity progdb
 
           --TODO: [code cleanup] it'd be better if the Compiler contained the
           -- ConfiguredPrograms that it needs, rather than relying on the progdb
@@ -459,81 +456,87 @@ rebuildInstallPlan verbosity
                                    (compilerInfo compiler)
 
             notice verbosity "Resolving dependencies..."
-            foldProgress logMsg die return $
-              planPackages compiler platform solver solverSettings
-                           installedPkgIndex sourcePkgDb pkgConfigDB
-                           localPackages localPackagesEnabledStanzas
+            foldProgress logMsg die return $ planPackages
+              compiler
+              platform
+              solver
+              solverSettings
+              installedPkgIndex
+              sourcePkgDb
+              pkgConfigDB
+              localPackages
+              localPackagesEnabledStanzas
       where
         corePackageDbs = [GlobalPackageDB]
-        withRepoCtx    = projectConfigWithSolverRepoContext verbosity
-                           cabalPackageCacheDirectory
-                           projectConfigShared
-                           projectConfigBuildOnly
+        withRepoCtx    = projectConfigWithSolverRepoContext
+          verbosity
+          cabalPackageCacheDirectory
+          projectConfigShared
+          projectConfigBuildOnly
         solverSettings = resolveSolverSettings projectConfig
         logMsg message rest = debugNoWrap verbosity message >> rest
 
-        localPackagesEnabledStanzas =
-          Map.fromList
-            [ (pkgname, stanzas)
-            | pkg <- localPackages
-            , let pkgname            = packageName pkg
-                  testsEnabled       = lookupLocalPackageConfig
-                                         packageConfigTests
-                                         projectConfig pkgname
-                  benchmarksEnabled  = lookupLocalPackageConfig
-                                         packageConfigBenchmarks
-                                         projectConfig pkgname
-                  stanzas =
-                    Map.fromList $
-                      [ (TestStanzas, enabled)
-                      | enabled <- flagToList testsEnabled ]
-                   ++ [ (BenchStanzas , enabled)
-                      | enabled <- flagToList benchmarksEnabled ]
-            ]
+        localPackagesEnabledStanzas = Map.fromList
+          [ (pkgname, stanzas)
+          | pkg <- localPackages
+          , let
+            pkgname = packageName pkg
+            testsEnabled =
+              lookupLocalPackageConfig packageConfigTests projectConfig pkgname
+            benchmarksEnabled = lookupLocalPackageConfig
+              packageConfigBenchmarks
+              projectConfig
+              pkgname
+            stanzas =
+              Map.fromList
+                $  [ (TestStanzas, enabled)
+                   | enabled <- flagToList testsEnabled
+                   ]
+                ++ [ (BenchStanzas, enabled)
+                   | enabled <- flagToList benchmarksEnabled
+                   ]
+          ]
 
     -- Elaborate the solver's install plan to get a fully detailed plan. This
     -- version of the plan has the final nix-style hashed ids.
     --
-    phaseElaboratePlan :: ProjectConfig
-                       -> (Compiler, Platform, ProgramDb)
-                       -> SolverInstallPlan
-                       -> [SourcePackage loc]
-                       -> Rebuild ( ElaboratedInstallPlan
-                                  , ElaboratedSharedConfig )
-    phaseElaboratePlan ProjectConfig {
-                         projectConfigShared,
-                         projectConfigLocalPackages,
-                         projectConfigSpecificPackage,
-                         projectConfigBuildOnly
-                       }
-                       (compiler, platform, progdb)
-                       solverPlan localPackages = do
+    phaseElaboratePlan
+      :: ProjectConfig
+      -> (Compiler, Platform, ProgramDb)
+      -> SolverInstallPlan
+      -> [SourcePackage loc]
+      -> Rebuild (ElaboratedInstallPlan, ElaboratedSharedConfig)
+    phaseElaboratePlan ProjectConfig { projectConfigShared, projectConfigLocalPackages, projectConfigSpecificPackage, projectConfigBuildOnly } (compiler, platform, progdb) solverPlan localPackages
+      = do
 
         liftIO $ debug verbosity "Elaborating the install plan..."
 
         sourcePackageHashes <-
-          rerunIfChanged verbosity fileMonitorSourceHashes
-                         (packageLocationsSignature solverPlan) $
-            getPackageSourceHashes verbosity withRepoCtx solverPlan
+          rerunIfChanged verbosity
+                         fileMonitorSourceHashes
+                         (packageLocationsSignature solverPlan)
+            $ getPackageSourceHashes verbosity withRepoCtx solverPlan
 
-        defaultInstallDirs <- liftIO $ userInstallDirTemplates compiler
-        return $
-          elaborateInstallPlan
-            platform compiler progdb
-            distDirLayout
-            cabalDirLayout
-            solverPlan
-            localPackages
-            sourcePackageHashes
-            defaultInstallDirs
-            projectConfigShared
-            projectConfigLocalPackages
-            (getMapMappend projectConfigSpecificPackage)
+        defaultInstallDirs  <- liftIO $ userInstallDirTemplates compiler
+        return $ elaborateInstallPlan
+          platform
+          compiler
+          progdb
+          distDirLayout
+          cabalDirLayout
+          solverPlan
+          localPackages
+          sourcePackageHashes
+          defaultInstallDirs
+          projectConfigShared
+          projectConfigLocalPackages
+          (getMapMappend projectConfigSpecificPackage)
       where
-        withRepoCtx = projectConfigWithSolverRepoContext verbosity
-                        cabalPackageCacheDirectory
-                        projectConfigShared
-                        projectConfigBuildOnly
+        withRepoCtx = projectConfigWithSolverRepoContext
+          verbosity
+          cabalPackageCacheDirectory
+          projectConfigShared
+          projectConfigBuildOnly
 
 
     -- Update the files we maintain that reflect our current build environment.
@@ -543,16 +546,16 @@ rebuildInstallPlan verbosity
     -- TODO: [required eventually] maintain the ghc environment file reflecting
     -- the libs available. This will need to be after plan improvement phase.
     --
-    phaseMaintainPlanOutputs :: ElaboratedInstallPlan
-                             -> ElaboratedInstallPlan
-                             -> ElaboratedSharedConfig
-                             -> Rebuild ()
+    phaseMaintainPlanOutputs
+      :: ElaboratedInstallPlan
+      -> ElaboratedInstallPlan
+      -> ElaboratedSharedConfig
+      -> Rebuild ()
     phaseMaintainPlanOutputs _improvedPlan elaboratedPlan elaboratedShared = do
-        liftIO $ debug verbosity "Updating plan.json"
-        liftIO $ writePlanExternalRepresentation
-                   distDirLayout
-                   elaboratedPlan
-                   elaboratedShared
+      liftIO $ debug verbosity "Updating plan.json"
+      liftIO $ writePlanExternalRepresentation distDirLayout
+                                               elaboratedPlan
+                                               elaboratedShared
 
 
     -- Improve the elaborated install plan. The elaborated plan consists
@@ -564,37 +567,36 @@ rebuildInstallPlan verbosity
     -- this improvement phase when the db changes -- including as a result of
     -- executing a plan and installing things.
     --
-    phaseImprovePlan :: ElaboratedInstallPlan
-                     -> ElaboratedSharedConfig
-                     -> Rebuild ElaboratedInstallPlan
+    phaseImprovePlan
+      :: ElaboratedInstallPlan
+      -> ElaboratedSharedConfig
+      -> Rebuild ElaboratedInstallPlan
     phaseImprovePlan elaboratedPlan elaboratedShared = do
 
-        liftIO $ debug verbosity "Improving the install plan..."
-        recreateDirectory verbosity True storeDirectory
-        storePkgIndex <- getPackageDBContents verbosity
-                                              compiler progdb platform
-                                              storePackageDb
-        let improvedPlan = improveInstallPlanWithPreExistingPackages
-                             storePkgIndex
-                             elaboratedPlan
-        return improvedPlan
-
+      liftIO $ debug verbosity "Improving the install plan..."
+      recreateDirectory verbosity True storeDirectory
+      storePkgIndex <- getPackageDBContents verbosity
+                                            compiler
+                                            progdb
+                                            platform
+                                            storePackageDb
+      let improvedPlan = improveInstallPlanWithPreExistingPackages
+            storePkgIndex
+            elaboratedPlan
+      return improvedPlan
       where
-        storeDirectory  = cabalStoreDirectory (compilerId compiler)
-        storePackageDb  = cabalStorePackageDB (compilerId compiler)
-        ElaboratedSharedConfig {
-          pkgConfigPlatform      = platform,
-          pkgConfigCompiler      = compiler,
-          pkgConfigCompilerProgs = progdb
-        } = elaboratedShared
+        storeDirectory = cabalStoreDirectory (compilerId compiler)
+        storePackageDb = cabalStorePackageDB (compilerId compiler)
+        ElaboratedSharedConfig { pkgConfigPlatform = platform, pkgConfigCompiler = compiler, pkgConfigCompilerProgs = progdb }
+          = elaboratedShared
 
 
 programsMonitorFiles :: ProgramDb -> [MonitorFilePath]
-programsMonitorFiles progdb =
-    [ monitor
+programsMonitorFiles progdb
+  = [ monitor
     | prog    <- configuredPrograms progdb
-    , monitor <- monitorFileSearchPath (programMonitorFiles prog)
-                                       (programPath prog)
+    , monitor <-
+      monitorFileSearchPath (programMonitorFiles prog) (programPath prog)
     ]
 
 -- | Select the bits of a 'ProgramDb' to monitor for value changes.
@@ -602,60 +604,72 @@ programsMonitorFiles progdb =
 --
 programsDbSignature :: ProgramDb -> [ConfiguredProgram]
 programsDbSignature progdb =
-    [ prog { programMonitorFiles = []
-           , programOverrideEnv  = filter ((/="PATH") . fst)
-                                          (programOverrideEnv prog) }
-    | prog <- configuredPrograms progdb ]
+  [ prog
+    { programMonitorFiles = []
+    , programOverrideEnv  = filter ((/="PATH") . fst) (programOverrideEnv prog)
+    }
+  | prog <- configuredPrograms progdb
+  ]
 
-getInstalledPackages :: Verbosity
-                     -> Compiler -> ProgramDb -> Platform
-                     -> PackageDBStack
-                     -> Rebuild InstalledPackageIndex
+getInstalledPackages
+  :: Verbosity
+  -> Compiler
+  -> ProgramDb
+  -> Platform
+  -> PackageDBStack
+  -> Rebuild InstalledPackageIndex
 getInstalledPackages verbosity compiler progdb platform packagedbs = do
-    monitorFiles . map monitorFileOrDirectory
-      =<< liftIO (IndexUtils.getInstalledPackagesMonitorFiles
-                    verbosity compiler
-                    packagedbs progdb platform)
-    liftIO $ IndexUtils.getInstalledPackages
-               verbosity compiler
-               packagedbs progdb
+  monitorFiles . map monitorFileOrDirectory =<< liftIO
+    ( IndexUtils.getInstalledPackagesMonitorFiles verbosity
+                                                  compiler
+                                                  packagedbs
+                                                  progdb
+                                                  platform
+    )
+  liftIO $ IndexUtils.getInstalledPackages verbosity compiler packagedbs progdb
 
-getPackageDBContents :: Verbosity
-                     -> Compiler -> ProgramDb -> Platform
-                     -> PackageDB
-                     -> Rebuild InstalledPackageIndex
+getPackageDBContents
+  :: Verbosity
+  -> Compiler
+  -> ProgramDb
+  -> Platform
+  -> PackageDB
+  -> Rebuild InstalledPackageIndex
 getPackageDBContents verbosity compiler progdb platform packagedb = do
-    monitorFiles . map monitorFileOrDirectory
-      =<< liftIO (IndexUtils.getInstalledPackagesMonitorFiles
-                    verbosity compiler
-                    [packagedb] progdb platform)
-    liftIO $ do
-      createPackageDBIfMissing verbosity compiler progdb packagedb
-      Cabal.getPackageDBContents verbosity compiler
-                                 packagedb progdb
+  monitorFiles . map monitorFileOrDirectory =<< liftIO
+    ( IndexUtils.getInstalledPackagesMonitorFiles verbosity
+                                                  compiler
+                                                  [packagedb]
+                                                  progdb
+                                                  platform
+    )
+  liftIO $ do
+    createPackageDBIfMissing   verbosity compiler progdb    packagedb
+    Cabal.getPackageDBContents verbosity compiler packagedb progdb
 
-getSourcePackages :: Verbosity -> (forall a. (RepoContext -> IO a) -> IO a)
-                  -> Rebuild SourcePackageDb
+getSourcePackages
+  :: Verbosity
+  -> (forall a . (RepoContext -> IO a) -> IO a)
+  -> Rebuild SourcePackageDb
 getSourcePackages verbosity withRepoCtx = do
-    (sourcePkgDb, repos) <-
-      liftIO $
-        withRepoCtx $ \repoctx -> do
-          sourcePkgDb <- IndexUtils.getSourcePackages verbosity repoctx
-          return (sourcePkgDb, repoContextRepos repoctx)
+  (sourcePkgDb, repos) <- liftIO $ withRepoCtx $ \repoctx -> do
+    sourcePkgDb <- IndexUtils.getSourcePackages verbosity repoctx
+    return (sourcePkgDb, repoContextRepos repoctx)
 
-    monitorFiles . map monitorFile
-                 . IndexUtils.getSourcePackagesMonitorFiles
-                 $ repos
-    return sourcePkgDb
+  monitorFiles
+    . map monitorFile
+    . IndexUtils.getSourcePackagesMonitorFiles
+    $ repos
+  return sourcePkgDb
 
 
 -- | Create a package DB if it does not currently exist. Note that this action
 -- is /not/ safe to run concurrently.
 --
-createPackageDBIfMissing :: Verbosity -> Compiler -> ProgramDb
-                         -> PackageDB -> IO ()
-createPackageDBIfMissing verbosity compiler progdb
-                         (SpecificPackageDB dbPath) = do
+createPackageDBIfMissing
+  :: Verbosity -> Compiler -> ProgramDb -> PackageDB -> IO ()
+createPackageDBIfMissing verbosity compiler progdb (SpecificPackageDB dbPath) =
+  do
     exists <- liftIO $ Cabal.doesPackageDBExist dbPath
     unless exists $ do
       createDirectoryIfMissingVerbose verbosity False (takeDirectory dbPath)
@@ -665,33 +679,35 @@ createPackageDBIfMissing _ _ _ _ = return ()
 
 getPkgConfigDb :: Verbosity -> ProgramDb -> Rebuild PkgConfigDb
 getPkgConfigDb verbosity progdb = do
-    dirs <- liftIO $ getPkgConfigDbDirs verbosity progdb
-    -- Just monitor the dirs so we'll notice new .pc files.
-    -- Alternatively we could monitor all the .pc files too.
-    forM_ dirs $ \dir -> do
-        dirExists <- liftIO $ doesDirectoryExist dir
-        -- TODO: turn this into a utility function
-        monitorFiles [if dirExists
-                        then monitorDirectory dir
-                        else monitorNonExistentDirectory dir]
+  dirs <- liftIO $ getPkgConfigDbDirs verbosity progdb
+  -- Just monitor the dirs so we'll notice new .pc files.
+  -- Alternatively we could monitor all the .pc files too.
+  forM_ dirs $ \dir -> do
+    dirExists <- liftIO $ doesDirectoryExist dir
+    -- TODO: turn this into a utility function
+    monitorFiles
+      [ if dirExists
+        then monitorDirectory dir
+        else monitorNonExistentDirectory dir
+      ]
 
-    liftIO $ readPkgConfigDb verbosity progdb
+  liftIO $ readPkgConfigDb verbosity progdb
 
 
 recreateDirectory :: Verbosity -> Bool -> FilePath -> Rebuild ()
 recreateDirectory verbosity createParents dir = do
-    liftIO $ createDirectoryIfMissingVerbose verbosity createParents dir
-    monitorFiles [monitorDirectoryExistence dir]
+  liftIO $ createDirectoryIfMissingVerbose verbosity createParents dir
+  monitorFiles [monitorDirectoryExistence dir]
 
 
 -- | Select the config values to monitor for changes package source hashes.
-packageLocationsSignature :: SolverInstallPlan
-                          -> [(PackageId, PackageLocation (Maybe FilePath))]
+packageLocationsSignature
+  :: SolverInstallPlan -> [(PackageId, PackageLocation (Maybe FilePath))]
 packageLocationsSignature solverPlan =
-    [ (packageId pkg, packageSource pkg)
-    | SolverInstallPlan.Configured (SolverPackage { solverPkgSource = pkg})
-        <- SolverInstallPlan.toList solverPlan
-    ]
+  [ (packageId pkg, packageSource pkg)
+  | SolverInstallPlan.Configured (SolverPackage { solverPkgSource = pkg }) <-
+    SolverInstallPlan.toList solverPlan
+  ]
 
 
 -- | Get the 'HashValue' for all the source packages where we use hashes,
@@ -699,165 +715,167 @@ packageLocationsSignature solverPlan =
 --
 -- Note that we don't get hashes for local unpacked packages.
 --
-getPackageSourceHashes :: Verbosity
-                       -> (forall a. (RepoContext -> IO a) -> IO a)
-                       -> SolverInstallPlan
-                       -> Rebuild (Map PackageId PackageSourceHash)
+getPackageSourceHashes
+  :: Verbosity
+  -> (forall a . (RepoContext -> IO a) -> IO a)
+  -> SolverInstallPlan
+  -> Rebuild (Map PackageId PackageSourceHash)
 getPackageSourceHashes verbosity withRepoCtx solverPlan = do
 
     -- Determine if and where to get the package's source hash from.
     --
-    let allPkgLocations :: [(PackageId, PackageLocation (Maybe FilePath))]
-        allPkgLocations =
-          [ (packageId pkg, packageSource pkg)
-          | SolverInstallPlan.Configured (SolverPackage { solverPkgSource = pkg})
-              <- SolverInstallPlan.toList solverPlan ]
+  let
+    allPkgLocations :: [(PackageId, PackageLocation (Maybe FilePath))]
+    allPkgLocations =
+      [ (packageId pkg, packageSource pkg)
+      | SolverInstallPlan.Configured (SolverPackage { solverPkgSource = pkg }) <-
+        SolverInstallPlan.toList solverPlan
+      ]
 
-        -- Tarballs that were local in the first place.
-        -- We'll hash these tarball files directly.
-        localTarballPkgs :: [(PackageId, FilePath)]
-        localTarballPkgs =
-          [ (pkgid, tarball)
-          | (pkgid, LocalTarballPackage tarball) <- allPkgLocations ]
+    -- Tarballs that were local in the first place.
+    -- We'll hash these tarball files directly.
+    localTarballPkgs :: [(PackageId, FilePath)]
+    localTarballPkgs =
+      [ (pkgid, tarball)
+      | (pkgid, LocalTarballPackage tarball) <- allPkgLocations
+      ]
 
-        -- Tarballs from remote URLs. We must have downloaded these already
-        -- (since we extracted the .cabal file earlier)
-        --TODO: [required eventually] finish remote tarball functionality
+    -- Tarballs from remote URLs. We must have downloaded these already
+    -- (since we extracted the .cabal file earlier)
+    --TODO: [required eventually] finish remote tarball functionality
 --        allRemoteTarballPkgs =
 --          [ (pkgid, )
 --          | (pkgid, RemoteTarballPackage ) <- allPkgLocations ]
 
-        -- Tarballs from repositories, either where the repository provides
-        -- hashes as part of the repo metadata, or where we will have to
-        -- download and hash the tarball.
-        repoTarballPkgsWithMetadata    :: [(PackageId, Repo)]
-        repoTarballPkgsWithoutMetadata :: [(PackageId, Repo)]
-        (repoTarballPkgsWithMetadata,
-         repoTarballPkgsWithoutMetadata) =
-          partitionEithers
-          [ case repo of
-              RepoSecure{} -> Left  (pkgid, repo)
-              _            -> Right (pkgid, repo)
-          | (pkgid, RepoTarballPackage repo _ _) <- allPkgLocations ]
+    -- Tarballs from repositories, either where the repository provides
+    -- hashes as part of the repo metadata, or where we will have to
+    -- download and hash the tarball.
+    repoTarballPkgsWithMetadata :: [(PackageId, Repo)]
+    repoTarballPkgsWithoutMetadata :: [(PackageId, Repo)]
+    (repoTarballPkgsWithMetadata, repoTarballPkgsWithoutMetadata) =
+      partitionEithers
+        [ case repo of
+          RepoSecure{} -> Left (pkgid, repo)
+          _            -> Right (pkgid, repo)
+        | (pkgid, RepoTarballPackage repo _ _) <- allPkgLocations
+        ]
 
-    -- For tarballs from repos that do not have hashes available we now have
-    -- to check if the packages were downloaded already.
-    --
-    (repoTarballPkgsToDownload,
-     repoTarballPkgsDownloaded)
-      <- fmap partitionEithers $
-         liftIO $ sequence
-           [ do mtarball <- checkRepoTarballFetched repo pkgid
-                case mtarball of
-                  Nothing      -> return (Left  (pkgid, repo))
-                  Just tarball -> return (Right (pkgid, tarball))
-           | (pkgid, repo) <- repoTarballPkgsWithoutMetadata ]
+  -- For tarballs from repos that do not have hashes available we now have
+  -- to check if the packages were downloaded already.
+  --
+  (repoTarballPkgsToDownload, repoTarballPkgsDownloaded     ) <-
+    fmap partitionEithers $ liftIO $ sequence
+      [ do
+        mtarball <- checkRepoTarballFetched repo pkgid
+        case mtarball of
+          Nothing      -> return (Left (pkgid, repo))
+          Just tarball -> return (Right (pkgid, tarball))
+      | (pkgid, repo) <- repoTarballPkgsWithoutMetadata
+      ]
 
-    (hashesFromRepoMetadata,
-     repoTarballPkgsNewlyDownloaded) <-
-      -- Avoid having to initialise the repository (ie 'withRepoCtx') if we
-      -- don't have to. (The main cost is configuring the http client.)
-      if null repoTarballPkgsToDownload && null repoTarballPkgsWithMetadata
+  (hashesFromRepoMetadata   , repoTarballPkgsNewlyDownloaded) <-
+    -- Avoid having to initialise the repository (ie 'withRepoCtx') if we
+    -- don't have to. (The main cost is configuring the http client.)
+    if null repoTarballPkgsToDownload && null repoTarballPkgsWithMetadata
       then return (Map.empty, [])
       else liftIO $ withRepoCtx $ \repoctx -> do
 
-      -- For tarballs from repos that do have hashes available as part of the
-      -- repo metadata we now load up the index for each repo and retrieve
-      -- the hashes for the packages
-      --
-      hashesFromRepoMetadata <-
-        Sec.uncheckClientErrors $ --TODO: [code cleanup] wrap in our own exceptions
-        fmap (Map.fromList . concat) $
-        sequence
-          -- Reading the repo index is expensive so we group the packages by repo
-          [ repoContextWithSecureRepo repoctx repo $ \secureRepo ->
-              Sec.withIndex secureRepo $ \repoIndex ->
-                sequence
-                  [ do hash <- Sec.trusted <$> -- strip off Trusted tag
-                               Sec.indexLookupHash repoIndex pkgid
-                       -- Note that hackage-security currently uses SHA256
-                       -- but this API could in principle give us some other
-                       -- choice in future.
-                       return (pkgid, hashFromTUF hash)
-                  | pkgid <- pkgids ]
-          | (repo, pkgids) <-
-                map (\grp@((_,repo):_) -> (repo, map fst grp))
-              . groupBy ((==)    `on` (remoteRepoName . repoRemote . snd))
-              . sortBy  (compare `on` (remoteRepoName . repoRemote . snd))
-              $ repoTarballPkgsWithMetadata
+    -- For tarballs from repos that do have hashes available as part of the
+    -- repo metadata we now load up the index for each repo and retrieve
+    -- the hashes for the packages
+    --
+        hashesFromRepoMetadata         <-
+          Sec.uncheckClientErrors $ --TODO: [code cleanup] wrap in our own exceptions
+                                    fmap (Map.fromList . concat) $ sequence
+            -- Reading the repo index is expensive so we group the packages by repo
+            [ repoContextWithSecureRepo repoctx repo
+              $ \secureRepo ->
+                  Sec.withIndex secureRepo $ \repoIndex -> sequence
+                    [ do
+                      hash <- Sec.trusted
+                        <$> -- strip off Trusted tag
+                            Sec.indexLookupHash repoIndex pkgid
+                      -- Note that hackage-security currently uses SHA256
+                      -- but this API could in principle give us some other
+                      -- choice in future.
+                      return (pkgid, hashFromTUF hash)
+                    | pkgid <- pkgids
+                    ]
+            | (repo, pkgids) <-
+              map (\grp@((_, repo):_) -> (repo, map fst grp))
+                . groupBy ((==) `on` (remoteRepoName . repoRemote . snd))
+                . sortBy (compare `on` (remoteRepoName . repoRemote . snd))
+                $ repoTarballPkgsWithMetadata
+            ]
+
+        -- For tarballs from repos that do not have hashes available, download
+        -- the ones we previously determined we need.
+        --
+        repoTarballPkgsNewlyDownloaded <- sequence
+          [ do
+            tarball <- fetchRepoTarball verbosity repoctx repo pkgid
+            return (pkgid, tarball)
+          | (pkgid, repo) <- repoTarballPkgsToDownload
           ]
 
-      -- For tarballs from repos that do not have hashes available, download
-      -- the ones we previously determined we need.
-      --
-      repoTarballPkgsNewlyDownloaded <-
-        sequence
-          [ do tarball <- fetchRepoTarball verbosity repoctx repo pkgid
-               return (pkgid, tarball)
-          | (pkgid, repo) <- repoTarballPkgsToDownload ]
+        return (hashesFromRepoMetadata, repoTarballPkgsNewlyDownloaded)
 
-      return (hashesFromRepoMetadata,
-              repoTarballPkgsNewlyDownloaded)
+  -- Hash tarball files for packages where we have to do that. This includes
+  -- tarballs that were local in the first place, plus tarballs from repos,
+  -- either previously cached or freshly downloaded.
+  --
+  let allTarballFilePkgs :: [(PackageId, FilePath)]
+      allTarballFilePkgs =
+        localTarballPkgs
+          ++ repoTarballPkgsDownloaded
+          ++ repoTarballPkgsNewlyDownloaded
+  hashesFromTarballFiles <- liftIO $ fmap Map.fromList $ sequence
+    [ do
+      srchash <- readFileHashValue tarball
+      return (pkgid, srchash)
+    | (pkgid, tarball) <- allTarballFilePkgs
+    ]
+  monitorFiles [ monitorFile tarball | (_pkgid, tarball) <- allTarballFilePkgs ]
 
-    -- Hash tarball files for packages where we have to do that. This includes
-    -- tarballs that were local in the first place, plus tarballs from repos,
-    -- either previously cached or freshly downloaded.
-    --
-    let allTarballFilePkgs :: [(PackageId, FilePath)]
-        allTarballFilePkgs = localTarballPkgs
-                          ++ repoTarballPkgsDownloaded
-                          ++ repoTarballPkgsNewlyDownloaded
-    hashesFromTarballFiles <- liftIO $
-      fmap Map.fromList $
-      sequence
-        [ do srchash <- readFileHashValue tarball
-             return (pkgid, srchash)
-        | (pkgid, tarball) <- allTarballFilePkgs
-        ]
-    monitorFiles [ monitorFile tarball
-                 | (_pkgid, tarball) <- allTarballFilePkgs ]
-
-    -- Return the combination
-    return $! hashesFromRepoMetadata
-           <> hashesFromTarballFiles
+  -- Return the combination
+  return $! hashesFromRepoMetadata <> hashesFromTarballFiles
 
 
 -- ------------------------------------------------------------
 -- * Installation planning
 -- ------------------------------------------------------------
 
-planPackages :: Compiler
-             -> Platform
-             -> Solver -> SolverSettings
-             -> InstalledPackageIndex
-             -> SourcePackageDb
-             -> PkgConfigDb
-             -> [UnresolvedSourcePackage]
-             -> Map PackageName (Map OptionalStanza Bool)
-             -> Progress String String SolverInstallPlan
-planPackages comp platform solver SolverSettings{..}
-             installedPkgIndex sourcePkgDb pkgConfigDB
-             localPackages pkgStanzasEnable =
-
-    resolveDependencies
-      platform (compilerInfo comp)
-      pkgConfigDB solver
-      resolverParams
-
+planPackages
+  :: Compiler
+  -> Platform
+  -> Solver
+  -> SolverSettings
+  -> InstalledPackageIndex
+  -> SourcePackageDb
+  -> PkgConfigDb
+  -> [UnresolvedSourcePackage]
+  -> Map PackageName (Map OptionalStanza Bool)
+  -> Progress String String SolverInstallPlan
+planPackages comp platform solver SolverSettings {..} installedPkgIndex sourcePkgDb pkgConfigDB localPackages pkgStanzasEnable
+  = resolveDependencies platform
+                        (compilerInfo comp)
+                        pkgConfigDB
+                        solver
+                        resolverParams
   where
 
     --TODO: [nice to have] disable multiple instances restriction in the solver, but then
     -- make sure we can cope with that in the output.
     resolverParams =
 
-        setMaxBackjumps solverSettingMaxBackjumps
+      setMaxBackjumps solverSettingMaxBackjumps
 
         --TODO: [required eventually] should only be configurable for custom installs
    -- . setIndependentGoals solverSettingIndependentGoals
 
-      . setReorderGoals solverSettingReorderGoals
+        . setReorderGoals solverSettingReorderGoals
 
-      . setCountConflicts solverSettingCountConflicts
+        . setCountConflicts solverSettingCountConflicts
 
         --TODO: [required eventually] should only be configurable for custom installs
    -- . setAvoidReinstalls solverSettingAvoidReinstalls
@@ -865,86 +883,101 @@ planPackages comp platform solver SolverSettings{..}
         --TODO: [required eventually] should only be configurable for custom installs
    -- . setShadowPkgs solverSettingShadowPkgs
 
-      . setStrongFlags solverSettingStrongFlags
+        . setStrongFlags solverSettingStrongFlags
 
         --TODO: [required eventually] decide if we need to prefer installed for
         -- global packages, or prefer latest even for global packages. Perhaps
         -- should be configurable but with a different name than "upgrade-dependencies".
-      . setPreferenceDefault PreferLatestForSelected
+        . setPreferenceDefault PreferLatestForSelected
                            {-(if solverSettingUpgradeDeps
                                 then PreferAllLatest
                                 else PreferLatestForSelected)-}
 
-      . removeLowerBounds solverSettingAllowOlder
-      . removeUpperBounds solverSettingAllowNewer
+        . removeLowerBounds solverSettingAllowOlder
+        . removeUpperBounds solverSettingAllowNewer
 
-      . addDefaultSetupDependencies (defaultSetupDeps comp platform
-                                   . PD.packageDescription
-                                   . packageDescription)
+        . addDefaultSetupDependencies
+            ( defaultSetupDeps comp platform
+            . PD.packageDescription
+            . packageDescription
+            )
 
-      . addPreferences
+        . addPreferences
           -- preferences from the config file or command line
-          [ PackageVersionPreference name ver
-          | Dependency name ver <- solverSettingPreferences ]
+            [ PackageVersionPreference name ver
+            | Dependency name ver <- solverSettingPreferences
+            ]
 
-      . addConstraints
+        . addConstraints
           -- version constraints from the config file or command line
             [ LabeledPackageConstraint (userToPackageConstraint pc) src
-            | (pc, src) <- solverSettingConstraints ]
+            | (pc, src) <- solverSettingConstraints
+            ]
 
-      . addPreferences
+        . addPreferences
           -- enable stanza preference where the user did not specify
-          [ PackageStanzasPreference pkgname stanzas
-          | pkg <- localPackages
-          , let pkgname = packageName pkg
-                stanzaM = Map.findWithDefault Map.empty pkgname pkgStanzasEnable
-                stanzas = [ stanza | stanza <- [minBound..maxBound]
-                          , Map.lookup stanza stanzaM == Nothing ]
-          , not (null stanzas)
-          ]
+            [ PackageStanzasPreference pkgname stanzas
+            | pkg <- localPackages
+            , let
+              pkgname = packageName pkg
+              stanzaM = Map.findWithDefault Map.empty pkgname pkgStanzasEnable
+              stanzas =
+                [ stanza
+                | stanza <- [minBound .. maxBound]
+                , Map.lookup stanza stanzaM == Nothing
+                ]
+            , not (null stanzas)
+            ]
 
-      . addConstraints
+        . addConstraints
           -- enable stanza constraints where the user asked to enable
-          [ LabeledPackageConstraint
-              (PackageConstraintStanzas pkgname stanzas)
-              ConstraintSourceConfigFlagOrTarget
-          | pkg <- localPackages
-          , let pkgname = packageName pkg
-                stanzaM = Map.findWithDefault Map.empty pkgname pkgStanzasEnable
-                stanzas = [ stanza | stanza <- [minBound..maxBound]
-                          , Map.lookup stanza stanzaM == Just True ]
-          , not (null stanzas)
-          ]
+            [ LabeledPackageConstraint ( PackageConstraintStanzas pkgname
+                                                                  stanzas
+                                       )
+                                       ConstraintSourceConfigFlagOrTarget
+            | pkg <- localPackages
+            , let
+              pkgname = packageName pkg
+              stanzaM = Map.findWithDefault Map.empty pkgname pkgStanzasEnable
+              stanzas =
+                [ stanza
+                | stanza <- [minBound .. maxBound]
+                , Map.lookup stanza stanzaM == Just True
+                ]
+            , not (null stanzas)
+            ]
 
-      . addConstraints
+        . addConstraints
           --TODO: [nice to have] should have checked at some point that the
           -- package in question actually has these flags.
-          [ LabeledPackageConstraint
-              (PackageConstraintFlags pkgname flags)
-              ConstraintSourceConfigFlagOrTarget
-          | (pkgname, flags) <- Map.toList solverSettingFlagAssignments ]
+            [ LabeledPackageConstraint (PackageConstraintFlags pkgname flags)
+                                       ConstraintSourceConfigFlagOrTarget
+            | (pkgname, flags) <- Map.toList solverSettingFlagAssignments
+            ]
 
-      . addConstraints
+        . addConstraints
           --TODO: [nice to have] we have user-supplied flags for unspecified
           -- local packages (as well as specific per-package flags). For the
           -- former we just apply all these flags to all local targets which
           -- is silly. We should check if the flags are appropriate.
-          [ LabeledPackageConstraint
-              (PackageConstraintFlags pkgname flags)
-              ConstraintSourceConfigFlagOrTarget
-          | let flags = solverSettingFlagAssignment
-          , not (null flags)
-          , pkg <- localPackages
-          , let pkgname = packageName pkg ]
+            [ LabeledPackageConstraint (PackageConstraintFlags pkgname flags)
+                                       ConstraintSourceConfigFlagOrTarget
+            | let flags = solverSettingFlagAssignment
+            , not (null flags)
+            , pkg <- localPackages
+            , let pkgname = packageName pkg
+            ]
 
-      $ stdResolverParams
+        $ stdResolverParams
 
     stdResolverParams =
       -- Note: we don't use the standardInstallPolicy here, since that uses
       -- its own addDefaultSetupDependencies that is not appropriate for us.
-      basicInstallPolicy
-        installedPkgIndex sourcePkgDb
-        (map SpecificSourcePackage localPackages)
+                        basicInstallPolicy installedPkgIndex
+                                           sourcePkgDb
+                                           ( map SpecificSourcePackage
+                                                 localPackages
+                                           )
 
 
 ------------------------------------------------------------------------------
@@ -978,7 +1011,9 @@ planPackages comp platform solver SolverSettings{..}
 -- matching that of the classic @cabal install --user@ or @--global@
 --
 elaborateInstallPlan
-  :: Platform -> Compiler -> ProgramDb
+  :: Platform
+  -> Compiler
+  -> ProgramDb
   -> DistDirLayout
   -> CabalDirLayout
   -> SolverInstallPlan
@@ -988,43 +1023,32 @@ elaborateInstallPlan
   -> ProjectConfigShared
   -> PackageConfig
   -> Map PackageName PackageConfig
-  -> (ElaboratedInstallPlan, ElaboratedSharedConfig)
-elaborateInstallPlan platform compiler compilerprogdb
-                     DistDirLayout{..}
-                     cabalDirLayout@CabalDirLayout{cabalStorePackageDB}
-                     solverPlan localPackages
-                     sourcePackageHashes
-                     defaultInstallDirs
-                     _sharedPackageConfig
-                     localPackagesConfig
-                     perPackageConfig =
-    (elaboratedInstallPlan, elaboratedSharedConfig)
+  -> ( ElaboratedInstallPlan
+     , ElaboratedSharedConfig
+     )
+elaborateInstallPlan platform compiler compilerprogdb DistDirLayout {..} cabalDirLayout@CabalDirLayout { cabalStorePackageDB } solverPlan localPackages sourcePackageHashes defaultInstallDirs _sharedPackageConfig localPackagesConfig perPackageConfig
+  = (elaboratedInstallPlan, elaboratedSharedConfig)
   where
-    elaboratedSharedConfig =
-      ElaboratedSharedConfig {
-        pkgConfigPlatform      = platform,
-        pkgConfigCompiler      = compiler,
-        pkgConfigCompilerProgs = compilerprogdb
+    elaboratedSharedConfig = ElaboratedSharedConfig
+      { pkgConfigPlatform      = platform
+      , pkgConfigCompiler      = compiler
+      , pkgConfigCompilerProgs = compilerprogdb
       }
 
     elaboratedInstallPlan =
-      flip InstallPlan.fromSolverInstallPlan solverPlan $ \mapDep planpkg ->
-        case planpkg of
-          SolverInstallPlan.PreExisting pkg _ ->
-            InstallPlan.PreExisting pkg
+      flip InstallPlan.fromSolverInstallPlan solverPlan
+        $ \mapDep planpkg -> case planpkg of
+            SolverInstallPlan.PreExisting pkg _ -> InstallPlan.PreExisting pkg
 
-          SolverInstallPlan.Configured  pkg ->
-            InstallPlan.Configured
-              (elaborateSolverPackage mapDep pkg)
+            SolverInstallPlan.Configured pkg ->
+              InstallPlan.Configured (elaborateSolverPackage mapDep pkg)
 
-    elaborateSolverPackage :: (SolverId -> ConfiguredId)
-                           -> SolverPackage UnresolvedPkgLoc
-                           -> ElaboratedConfiguredPackage
     elaborateSolverPackage
-        mapDep
-        pkg@(SolverPackage (SourcePackage pkgid gdesc srcloc descOverride)
-                           flags stanzas deps0) =
-        elaboratedPackage
+      :: (SolverId -> ConfiguredId)
+      -> SolverPackage UnresolvedPkgLoc
+      -> ElaboratedConfiguredPackage
+    elaborateSolverPackage mapDep pkg@(SolverPackage (SourcePackage pkgid gdesc srcloc descOverride) flags stanzas deps0)
+      = elaboratedPackage
       where
         -- Knot tying: the final elaboratedPackage includes the
         -- pkgInstalledId, which is calculated by hashing many
@@ -1032,39 +1056,41 @@ elaborateInstallPlan platform compiler compilerprogdb
         --
         elaboratedPackage = ElaboratedConfiguredPackage {..}
 
-        deps = fmap (map elaborateSolverId) deps0
+        deps              = fmap (map elaborateSolverId) deps0
 
         elaborateSolverId = mapDep
 
         pkgInstalledId
           | shouldBuildInplaceOnly pkg
           = mkUnitId (display pkgid ++ "-inplace")
-
+          | otherwise  -- recursive use of elaboratedPackage
+          = assert (isJust pkgSourceHash) $ hashedInstalledPackageId
+            (packageHashInputs elaboratedSharedConfig elaboratedPackage)
           | otherwise
-          = assert (isJust pkgSourceHash) $
-            hashedInstalledPackageId
-              (packageHashInputs
-                elaboratedSharedConfig
-                elaboratedPackage)  -- recursive use of elaboratedPackage
-
-          | otherwise
-          = error $ "elaborateInstallPlan: non-inplace package "
-                 ++ " is missing a source hash: " ++ display pkgid
+          =  error
+          $  "elaborateInstallPlan: non-inplace package "
+          ++ " is missing a source hash: "
+          ++ display pkgid
 
         -- All the other fields of the ElaboratedConfiguredPackage
         --
-        pkgSourceId         = pkgid
-        pkgDescription      = let Right (desc, _) =
-                                    PD.finalizePD
-                                    flags enabled (const True)
-                                    platform (compilerInfo compiler)
-                                    [] gdesc
-                               in desc
-        pkgFlagAssignment   = flags
-        pkgFlagDefaults     = [ (Cabal.flagName flag, Cabal.flagDefault flag)
-                              | flag <- PD.genPackageFlags gdesc ]
+        pkgSourceId = pkgid
+        pkgDescription =
+          let Right (desc, _) = PD.finalizePD flags
+                                              enabled
+                                              (const True)
+                                              platform
+                                              (compilerInfo compiler)
+                                              []
+                                              gdesc
+          in  desc
+        pkgFlagAssignment = flags
+        pkgFlagDefaults =
+          [ (Cabal.flagName flag, Cabal.flagDefault flag)
+          | flag <- PD.genPackageFlags gdesc
+          ]
         pkgDependencies     = deps
-        enabled = enableStanzas stanzas
+        enabled             = enableStanzas stanzas
         pkgStanzasAvailable = Set.fromList stanzas
         pkgStanzasRequested =
             -- NB: even if a package stanza is requested, if the package
@@ -1073,10 +1099,15 @@ elaborateInstallPlan platform compiler compilerprogdb
             -- package needs to be rebuilt.  (It needs to be done here,
             -- because the ElaboratedConfiguredPackage is where we test
             -- whether or not there have been changes.)
-            Map.fromList $ [ (TestStanzas,  v) | v <- maybeToList tests
-                                               , _ <- PD.testSuites pkgDescription ]
-                        ++ [ (BenchStanzas, v) | v <- maybeToList benchmarks
-                                               , _ <- PD.benchmarks pkgDescription ]
+          Map.fromList
+            $  [ (TestStanzas, v)
+               | v <- maybeToList tests
+               , _ <- PD.testSuites pkgDescription
+               ]
+            ++ [ (BenchStanzas, v)
+               | v <- maybeToList benchmarks
+               , _ <- PD.benchmarks pkgDescription
+               ]
           where
             tests, benchmarks :: Maybe Bool
             tests      = perPkgOptionMaybe pkgid packageConfigTests
@@ -1090,177 +1121,194 @@ elaborateInstallPlan platform compiler compilerprogdb
         -- but this function doesn't know what is installed (since
         -- we haven't improved the plan yet), so we do it in another pass.
         -- Check the comments of those functions for more details.
-        pkgStanzasEnabled   = Set.empty
-        pkgBuildTargets     = []
-        pkgReplTarget       = Nothing
-        pkgBuildHaddocks    = False
+        pkgStanzasEnabled         = Set.empty
+        pkgBuildTargets           = []
+        pkgReplTarget             = Nothing
+        pkgBuildHaddocks          = False
 
-        pkgSourceLocation   = srcloc
-        pkgSourceHash       = Map.lookup pkgid sourcePackageHashes
-        pkgLocalToProject   = isLocalToProject pkg
-        pkgBuildStyle       = if shouldBuildInplaceOnly pkg
-                                then BuildInplaceOnly else BuildAndInstall
+        pkgSourceLocation         = srcloc
+        pkgSourceHash             = Map.lookup pkgid sourcePackageHashes
+        pkgLocalToProject         = isLocalToProject pkg
+        pkgBuildStyle             = if shouldBuildInplaceOnly pkg
+          then BuildInplaceOnly
+          else BuildAndInstall
         pkgBuildPackageDBStack    = buildAndRegisterDbs
         pkgRegisterPackageDBStack = buildAndRegisterDbs
         pkgRequiresRegistration   = PD.hasPublicLib pkgDescription
 
         pkgSetupScriptStyle       = packageSetupScriptStyle pkgDescription
         pkgSetupScriptCliVersion  = packageSetupScriptSpecVersion
-                                      pkgSetupScriptStyle pkgDescription deps
+          pkgSetupScriptStyle
+          pkgDescription
+          deps
         pkgSetupPackageDBStack    = buildAndRegisterDbs
 
         buildAndRegisterDbs
-          | shouldBuildInplaceOnly pkg = inplacePackageDbs
-          | otherwise                  = storePackageDbs
+          | shouldBuildInplaceOnly pkg
+          = inplacePackageDbs
+          | otherwise
+          = storePackageDbs
 
-        pkgDescriptionOverride    = descOverride
+        pkgDescriptionOverride = descOverride
 
-        pkgVanillaLib    = perPkgOptionFlag pkgid True packageConfigVanillaLib --TODO: [required feature]: also needs to be handled recursively
-        pkgSharedLib     = pkgid `Set.member` pkgsUseSharedLibrary
-        pkgDynExe        = perPkgOptionFlag pkgid False packageConfigDynExe
-        pkgGHCiLib       = perPkgOptionFlag pkgid False packageConfigGHCiLib --TODO: [required feature] needs to default to enabled on windows still
+        pkgVanillaLib = perPkgOptionFlag pkgid True packageConfigVanillaLib --TODO: [required feature]: also needs to be handled recursively
+        pkgSharedLib = pkgid `Set.member` pkgsUseSharedLibrary
+        pkgDynExe = perPkgOptionFlag pkgid False packageConfigDynExe
+        pkgGHCiLib = perPkgOptionFlag pkgid False packageConfigGHCiLib --TODO: [required feature] needs to default to enabled on windows still
 
-        pkgProfExe       = perPkgOptionFlag pkgid False packageConfigProf
-        pkgProfLib       = pkgid `Set.member` pkgsUseProfilingLibrary
+        pkgProfExe = perPkgOptionFlag pkgid False packageConfigProf
+        pkgProfLib = pkgid `Set.member` pkgsUseProfilingLibrary
 
-        (pkgProfExeDetail,
-         pkgProfLibDetail) = perPkgOptionLibExeFlag pkgid ProfDetailDefault
-                               packageConfigProfDetail
-                               packageConfigProfLibDetail
-        pkgCoverage      = perPkgOptionFlag pkgid False packageConfigCoverage
+        (pkgProfExeDetail, pkgProfLibDetail) = perPkgOptionLibExeFlag
+          pkgid
+          ProfDetailDefault
+          packageConfigProfDetail
+          packageConfigProfLibDetail
+        pkgCoverage = perPkgOptionFlag pkgid False packageConfigCoverage
 
-        pkgOptimization  = perPkgOptionFlag pkgid NormalOptimisation packageConfigOptimization
-        pkgSplitObjs     = perPkgOptionFlag pkgid False packageConfigSplitObjs
-        pkgStripLibs     = perPkgOptionFlag pkgid False packageConfigStripLibs
-        pkgStripExes     = perPkgOptionFlag pkgid False packageConfigStripExes
-        pkgDebugInfo     = perPkgOptionFlag pkgid NoDebugInfo packageConfigDebugInfo
+        pkgOptimization =
+          perPkgOptionFlag pkgid NormalOptimisation packageConfigOptimization
+        pkgSplitObjs = perPkgOptionFlag pkgid False packageConfigSplitObjs
+        pkgStripLibs = perPkgOptionFlag pkgid False packageConfigStripLibs
+        pkgStripExes = perPkgOptionFlag pkgid False packageConfigStripExes
+        pkgDebugInfo = perPkgOptionFlag pkgid NoDebugInfo packageConfigDebugInfo
 
         -- Combine the configured compiler prog settings with the user-supplied
         -- config. For the compiler progs any user-supplied config was taken
         -- into account earlier when configuring the compiler so its ok that
         -- our configured settings for the compiler override the user-supplied
         -- config here.
-        pkgProgramPaths  = Map.fromList
-                             [ (programId prog, programPath prog)
-                             | prog <- configuredPrograms compilerprogdb ]
-                        <> perPkgOptionMapLast pkgid packageConfigProgramPaths
-        pkgProgramArgs   = Map.fromList
-                             [ (programId prog, args)
-                             | prog <- configuredPrograms compilerprogdb
-                             , let args = programOverrideArgs prog
-                             , not (null args)
-                             ]
-                        <> perPkgOptionMapMappend pkgid packageConfigProgramArgs
-        pkgProgramPathExtra    = perPkgOptionNubList pkgid packageConfigProgramPathExtra
-        pkgConfigureScriptArgs = perPkgOptionList pkgid packageConfigConfigureArgs
-        pkgExtraLibDirs        = perPkgOptionList pkgid packageConfigExtraLibDirs
-        pkgExtraFrameworkDirs  = perPkgOptionList pkgid packageConfigExtraFrameworkDirs
-        pkgExtraIncludeDirs    = perPkgOptionList pkgid packageConfigExtraIncludeDirs
-        pkgProgPrefix          = perPkgOptionMaybe pkgid packageConfigProgPrefix
-        pkgProgSuffix          = perPkgOptionMaybe pkgid packageConfigProgSuffix
+        pkgProgramPaths =
+          Map.fromList
+              [ (programId prog, programPath prog)
+              | prog <- configuredPrograms compilerprogdb
+              ]
+            <> perPkgOptionMapLast pkgid packageConfigProgramPaths
+        pkgProgramArgs =
+          Map.fromList
+              [ (programId prog, args)
+              | prog <- configuredPrograms compilerprogdb
+              , let args = programOverrideArgs prog
+              , not (null args)
+              ]
+            <> perPkgOptionMapMappend pkgid packageConfigProgramArgs
+        pkgProgramPathExtra =
+          perPkgOptionNubList pkgid packageConfigProgramPathExtra
+        pkgConfigureScriptArgs =
+          perPkgOptionList pkgid packageConfigConfigureArgs
+        pkgExtraLibDirs = perPkgOptionList pkgid packageConfigExtraLibDirs
+        pkgExtraFrameworkDirs =
+          perPkgOptionList pkgid packageConfigExtraFrameworkDirs
+        pkgExtraIncludeDirs =
+          perPkgOptionList pkgid packageConfigExtraIncludeDirs
+        pkgProgPrefix = perPkgOptionMaybe pkgid packageConfigProgPrefix
+        pkgProgSuffix = perPkgOptionMaybe pkgid packageConfigProgSuffix
 
         pkgInstallDirs
-          | shouldBuildInplaceOnly pkg
+          | shouldBuildInplaceOnly pkg                              -- them as "Setup.hs configure" args
           -- use the ordinary default install dirs
-          = (InstallDirs.absoluteInstallDirs
-               pkgid
-               pkgInstalledId
-               (compilerInfo compiler)
-               InstallDirs.NoCopyDest
-               platform
-               defaultInstallDirs) {
-
-              InstallDirs.libsubdir  = "", -- absoluteInstallDirs sets these as
-              InstallDirs.datasubdir = ""  -- 'undefined' but we have to use
-            }                              -- them as "Setup.hs configure" args
-
+          = ( InstallDirs.absoluteInstallDirs pkgid
+                                              pkgInstalledId
+                                              (compilerInfo compiler)
+                                              InstallDirs.NoCopyDest
+                                              platform
+                                              defaultInstallDirs
+            )
+            { InstallDirs.libsubdir  = "" -- absoluteInstallDirs sets these as
+            , InstallDirs.datasubdir = ""  -- 'undefined' but we have to use
+            }
           | otherwise
           -- use special simplified install dirs
-          = storePackageInstallDirs
-              cabalDirLayout
-              (compilerId compiler)
-              pkgInstalledId
+          = storePackageInstallDirs cabalDirLayout
+                                    (compilerId compiler)
+                                    pkgInstalledId
 
-        pkgHaddockHoogle       = perPkgOptionFlag pkgid False packageConfigHaddockHoogle
-        pkgHaddockHtml         = perPkgOptionFlag pkgid False packageConfigHaddockHtml
-        pkgHaddockHtmlLocation = perPkgOptionMaybe pkgid packageConfigHaddockHtmlLocation
-        pkgHaddockExecutables  = perPkgOptionFlag pkgid False packageConfigHaddockExecutables
-        pkgHaddockTestSuites   = perPkgOptionFlag pkgid False packageConfigHaddockTestSuites
-        pkgHaddockBenchmarks   = perPkgOptionFlag pkgid False packageConfigHaddockBenchmarks
-        pkgHaddockInternal     = perPkgOptionFlag pkgid False packageConfigHaddockInternal
-        pkgHaddockCss          = perPkgOptionMaybe pkgid packageConfigHaddockCss
-        pkgHaddockHscolour     = perPkgOptionFlag pkgid False packageConfigHaddockHscolour
-        pkgHaddockHscolourCss  = perPkgOptionMaybe pkgid packageConfigHaddockHscolourCss
-        pkgHaddockContents     = perPkgOptionMaybe pkgid packageConfigHaddockContents
+        pkgHaddockHoogle =
+          perPkgOptionFlag pkgid False packageConfigHaddockHoogle
+        pkgHaddockHtml = perPkgOptionFlag pkgid False packageConfigHaddockHtml
+        pkgHaddockHtmlLocation =
+          perPkgOptionMaybe pkgid packageConfigHaddockHtmlLocation
+        pkgHaddockExecutables =
+          perPkgOptionFlag pkgid False packageConfigHaddockExecutables
+        pkgHaddockTestSuites =
+          perPkgOptionFlag pkgid False packageConfigHaddockTestSuites
+        pkgHaddockBenchmarks =
+          perPkgOptionFlag pkgid False packageConfigHaddockBenchmarks
+        pkgHaddockInternal =
+          perPkgOptionFlag pkgid False packageConfigHaddockInternal
+        pkgHaddockCss = perPkgOptionMaybe pkgid packageConfigHaddockCss
+        pkgHaddockHscolour =
+          perPkgOptionFlag pkgid False packageConfigHaddockHscolour
+        pkgHaddockHscolourCss =
+          perPkgOptionMaybe pkgid packageConfigHaddockHscolourCss
+        pkgHaddockContents =
+          perPkgOptionMaybe pkgid packageConfigHaddockContents
 
-    perPkgOptionFlag  :: PackageId -> a ->  (PackageConfig -> Flag a) -> a
-    perPkgOptionMaybe :: PackageId ->       (PackageConfig -> Flag a) -> Maybe a
-    perPkgOptionList  :: PackageId ->       (PackageConfig -> [a])    -> [a]
+    perPkgOptionFlag :: PackageId -> a -> (PackageConfig -> Flag a) -> a
+    perPkgOptionMaybe :: PackageId -> (PackageConfig -> Flag a) -> Maybe a
+    perPkgOptionList :: PackageId -> (PackageConfig -> [a]) -> [a]
 
-    perPkgOptionFlag  pkgid def f = fromFlagOrDefault def (lookupPerPkgOption pkgid f)
-    perPkgOptionMaybe pkgid     f = flagToMaybe (lookupPerPkgOption pkgid f)
-    perPkgOptionList  pkgid     f = lookupPerPkgOption pkgid f
-    perPkgOptionNubList    pkgid f = fromNubList   (lookupPerPkgOption pkgid f)
-    perPkgOptionMapLast    pkgid f = getMapLast    (lookupPerPkgOption pkgid f)
+    perPkgOptionFlag pkgid def f =
+      fromFlagOrDefault def (lookupPerPkgOption pkgid f)
+    perPkgOptionMaybe pkgid f = flagToMaybe (lookupPerPkgOption pkgid f)
+    perPkgOptionList pkgid f = lookupPerPkgOption pkgid f
+    perPkgOptionNubList pkgid f = fromNubList (lookupPerPkgOption pkgid f)
+    perPkgOptionMapLast pkgid f = getMapLast (lookupPerPkgOption pkgid f)
     perPkgOptionMapMappend pkgid f = getMapMappend (lookupPerPkgOption pkgid f)
 
     perPkgOptionLibExeFlag pkgid def fboth flib = (exe, lib)
       where
-        exe = fromFlagOrDefault def bothflag
-        lib = fromFlagOrDefault def (bothflag <> libflag)
+        exe      = fromFlagOrDefault def bothflag
+        lib      = fromFlagOrDefault def (bothflag <> libflag)
 
         bothflag = lookupPerPkgOption pkgid fboth
         libflag  = lookupPerPkgOption pkgid flib
 
-    lookupPerPkgOption :: (Package pkg, Monoid m)
-                       => pkg -> (PackageConfig -> m) -> m
+    lookupPerPkgOption
+      :: (Package pkg, Monoid m) => pkg -> (PackageConfig -> m) -> m
     lookupPerPkgOption pkg f
+      |
       -- the project config specifies values that apply to packages local to
       -- but by default non-local packages get all default config values
       -- the project, and can specify per-package values for any package,
-      | isLocalToProject pkg = local <> perpkg
-      | otherwise            =          perpkg
+        isLocalToProject pkg
+      = local <> perpkg
+      | otherwise
+      = perpkg
       where
         local  = f localPackagesConfig
         perpkg = maybe mempty f (Map.lookup (packageName pkg) perPackageConfig)
 
-    inplacePackageDbs = storePackageDbs
-                     ++ [ distPackageDB (compilerId compiler) ]
+    inplacePackageDbs = storePackageDbs ++ [distPackageDB (compilerId compiler)]
 
-    storePackageDbs   = [ GlobalPackageDB
-                        , cabalStorePackageDB (compilerId compiler) ]
+    storePackageDbs =
+      [GlobalPackageDB, cabalStorePackageDB (compilerId compiler)]
 
     -- For this local build policy, every package that lives in a local source
     -- dir (as opposed to a tarball), or depends on such a package, will be
     -- built inplace into a shared dist dir. Tarball packages that depend on
     -- source dir packages will also get unpacked locally.
     shouldBuildInplaceOnly :: SolverPackage loc -> Bool
-    shouldBuildInplaceOnly pkg = Set.member (packageId pkg)
-                                            pkgsToBuildInplaceOnly
+    shouldBuildInplaceOnly pkg =
+      Set.member (packageId pkg) pkgsToBuildInplaceOnly
 
     pkgsToBuildInplaceOnly :: Set PackageId
     pkgsToBuildInplaceOnly =
-        Set.fromList
-      $ map packageId
-      $ SolverInstallPlan.reverseDependencyClosure
-          solverPlan
-          [ PlannedId (packageId pkg)
-          | pkg <- localPackages ]
+      Set.fromList $ map packageId $ SolverInstallPlan.reverseDependencyClosure
+        solverPlan
+        [ PlannedId (packageId pkg) | pkg <- localPackages ]
 
     isLocalToProject :: Package pkg => pkg -> Bool
-    isLocalToProject pkg = Set.member (packageId pkg)
-                                      pkgsLocalToProject
+    isLocalToProject pkg = Set.member (packageId pkg) pkgsLocalToProject
 
     pkgsLocalToProject :: Set PackageId
     pkgsLocalToProject = Set.fromList [ packageId pkg | pkg <- localPackages ]
 
     pkgsUseSharedLibrary :: Set PackageId
-    pkgsUseSharedLibrary =
-        packagesWithDownwardClosedProperty needsSharedLib
+    pkgsUseSharedLibrary = packagesWithDownwardClosedProperty needsSharedLib
       where
-        needsSharedLib pkg =
-            fromMaybe compilerShouldUseSharedLibByDefault
-                      (liftM2 (||) pkgSharedLib pkgDynExe)
+        needsSharedLib pkg = fromMaybe compilerShouldUseSharedLibByDefault
+                                       (liftM2 (||) pkgSharedLib pkgDynExe)
           where
             pkgid        = packageId pkg
             pkgSharedLib = perPkgOptionMaybe pkgid packageConfigSharedLib
@@ -1269,18 +1317,18 @@ elaborateInstallPlan platform compiler compilerprogdb
     --TODO: [code cleanup] move this into the Cabal lib. It's currently open
     -- coded in Distribution.Simple.Configure, but should be made a proper
     -- function of the Compiler or CompilerInfo.
-    compilerShouldUseSharedLibByDefault =
-      case compilerFlavor compiler of
-        GHC   -> GHC.isDynamic compiler
-        GHCJS -> GHCJS.isDynamic compiler
-        _     -> False
+    compilerShouldUseSharedLibByDefault = case compilerFlavor compiler of
+      GHC   -> GHC.isDynamic compiler
+      GHCJS -> GHCJS.isDynamic compiler
+      _     -> False
 
     pkgsUseProfilingLibrary :: Set PackageId
-    pkgsUseProfilingLibrary =
-        packagesWithDownwardClosedProperty needsProfilingLib
+    pkgsUseProfilingLibrary = packagesWithDownwardClosedProperty
+      needsProfilingLib
       where
-        needsProfilingLib pkg =
-            fromFlagOrDefault False (profBothFlag <> profLibFlag)
+        needsProfilingLib pkg = fromFlagOrDefault
+          False
+          (profBothFlag <> profLibFlag)
           where
             pkgid        = packageId pkg
             profBothFlag = lookupPerPkgOption pkgid packageConfigProf
@@ -1288,13 +1336,12 @@ elaborateInstallPlan platform compiler compilerprogdb
             --TODO: [code cleanup] unused: the old deprecated packageConfigProfExe
 
     packagesWithDownwardClosedProperty property =
-        Set.fromList
-      $ map packageId
-      $ SolverInstallPlan.dependencyClosure
-          solverPlan
-          [ Graph.nodeKey pkg
-          | pkg <- SolverInstallPlan.toList solverPlan
-          , property pkg ] -- just the packages that satisfy the propety
+      Set.fromList $ map packageId $ SolverInstallPlan.dependencyClosure
+        solverPlan
+        [ Graph.nodeKey pkg
+        | pkg <- SolverInstallPlan.toList solverPlan
+        , property pkg
+        ] -- just the packages that satisfy the propety
       --TODO: [nice to have] this does not check the config consistency,
       -- e.g. a package explicitly turning off profiling, but something
       -- depending on it that needs profiling. This really needs a separate
@@ -1319,54 +1366,56 @@ elaborateInstallPlan platform compiler compilerprogdb
 
 
 --TODO: this needs to report some user target/config errors
-elaboratePackageTargets :: ElaboratedConfiguredPackage -> [PackageTarget]
-                        -> ([ComponentTarget], Maybe ComponentTarget, Bool)
-elaboratePackageTargets ElaboratedConfiguredPackage{..} targets =
-    let buildTargets  = nubComponentTargets
-                      . map compatSubComponentTargets
-                      . concatMap elaborateBuildTarget
-                      $ targets
-        --TODO: instead of listToMaybe we should be reporting an error here
-        replTargets   = listToMaybe
-                      . nubComponentTargets
-                      . map compatSubComponentTargets
-                      . concatMap elaborateReplTarget
-                      $ targets
-        buildHaddocks = HaddockDefaultComponents `elem` targets
-
-     in (buildTargets, replTargets, buildHaddocks)
+elaboratePackageTargets
+  :: ElaboratedConfiguredPackage
+  -> [PackageTarget]
+  -> ([ComponentTarget], Maybe ComponentTarget, Bool)
+elaboratePackageTargets ElaboratedConfiguredPackage {..} targets =
+  let buildTargets =
+        nubComponentTargets
+          . map compatSubComponentTargets
+          . concatMap elaborateBuildTarget
+          $ targets
+      --TODO: instead of listToMaybe we should be reporting an error here
+      replTargets =
+        listToMaybe
+          . nubComponentTargets
+          . map compatSubComponentTargets
+          . concatMap elaborateReplTarget
+          $ targets
+      buildHaddocks = HaddockDefaultComponents `elem` targets
+  in  (buildTargets, replTargets, buildHaddocks)
   where
     --TODO: need to report an error here if defaultComponents is empty
-    elaborateBuildTarget  BuildDefaultComponents    = pkgDefaultComponents
+    elaborateBuildTarget BuildDefaultComponents     = pkgDefaultComponents
     elaborateBuildTarget (BuildSpecificComponent t) = [t]
-    elaborateBuildTarget  _                         = []
+    elaborateBuildTarget _                          = []
 
     --TODO: need to report an error here if defaultComponents is empty
-    elaborateReplTarget  ReplDefaultComponent     = take 1 pkgDefaultComponents
+    elaborateReplTarget ReplDefaultComponent      = take 1 pkgDefaultComponents
     elaborateReplTarget (ReplSpecificComponent t) = [t]
-    elaborateReplTarget  _                        = []
+    elaborateReplTarget _                         = []
 
     pkgDefaultComponents =
-        [ ComponentTarget cname WholeComponent
-        | c <- Cabal.pkgComponents pkgDescription
-        , PD.buildable (Cabal.componentBuildInfo c)
-        , let cname = Cabal.componentName c
-        , enabledOptionalStanza cname
-        ]
+      [ ComponentTarget cname WholeComponent
+      | c <- Cabal.pkgComponents pkgDescription
+      , PD.buildable (Cabal.componentBuildInfo c)
+      , let cname = Cabal.componentName c
+      , enabledOptionalStanza cname
+      ]
       where
-        enabledOptionalStanza cname =
-          case componentOptionalStanza cname of
-            Nothing     -> True
-            Just stanza -> Map.lookup stanza pkgStanzasRequested
-                        == Just True
+        enabledOptionalStanza cname = case componentOptionalStanza cname of
+          Nothing     -> True
+          Just stanza -> Map.lookup stanza pkgStanzasRequested == Just True
 
     -- Not all Cabal Setup.hs versions support sub-component targets, so switch
     -- them over to the whole component
     compatSubComponentTargets :: ComponentTarget -> ComponentTarget
     compatSubComponentTargets target@(ComponentTarget cname _subtarget)
       | not setupHsSupportsSubComponentTargets
-                  = ComponentTarget cname WholeComponent
-      | otherwise = target
+      = ComponentTarget cname WholeComponent
+      | otherwise
+      = target
 
     -- Actually the reality is that no current version of Cabal's Setup.hs
     -- build command actually support building specific files or modules.
@@ -1376,10 +1425,10 @@ elaboratePackageTargets ElaboratedConfiguredPackage{..} targets =
 
     nubComponentTargets :: [ComponentTarget] -> [ComponentTarget]
     nubComponentTargets =
-        concatMap (wholeComponentOverrides . map snd)
-      . groupBy ((==)    `on` fst)
-      . sortBy  (compare `on` fst)
-      . map (\t@(ComponentTarget cname _) -> (cname, t))
+      concatMap (wholeComponentOverrides . map snd)
+        . groupBy ((==) `on` fst)
+        . sortBy (compare `on` fst)
+        . map (\t@(ComponentTarget cname _) -> (cname, t))
 
     -- If we're building the whole component then that the only target all we
     -- need, otherwise we can have several targets within the component.
@@ -1391,20 +1440,20 @@ elaboratePackageTargets ElaboratedConfiguredPackage{..} targets =
 
 
 pkgHasEphemeralBuildTargets :: ElaboratedConfiguredPackage -> Bool
-pkgHasEphemeralBuildTargets pkg =
-    isJust (pkgReplTarget pkg)
- || (not . null) [ () | ComponentTarget _ subtarget <- pkgBuildTargets pkg
-                      , subtarget /= WholeComponent ]
+pkgHasEphemeralBuildTargets pkg = isJust (pkgReplTarget pkg) || (not . null)
+  [ ()
+  | ComponentTarget _ subtarget <- pkgBuildTargets pkg
+  , subtarget /= WholeComponent
+  ]
 
 -- | The components that we'll build all of, meaning that after they're built
 -- we can skip building them again (unlike with building just some modules or
 -- other files within a component).
 --
-pkgBuildTargetWholeComponents :: ElaboratedConfiguredPackage
-                              -> Set ComponentName
-pkgBuildTargetWholeComponents pkg =
-    Set.fromList
-      [ cname | ComponentTarget cname WholeComponent <- pkgBuildTargets pkg ]
+pkgBuildTargetWholeComponents
+  :: ElaboratedConfiguredPackage -> Set ComponentName
+pkgBuildTargetWholeComponents pkg = Set.fromList
+  [ cname | ComponentTarget cname WholeComponent <- pkgBuildTargets pkg ]
 
 
 ------------------------------------------------------------------------------
@@ -1416,16 +1465,18 @@ pkgBuildTargetWholeComponents pkg =
 -- targets. Also, update the package config to specify which optional stanzas
 -- to enable, and which targets within each package to build.
 --
-pruneInstallPlanToTargets :: Map InstalledPackageId [PackageTarget]
-                          -> ElaboratedInstallPlan -> ElaboratedInstallPlan
+pruneInstallPlanToTargets
+  :: Map InstalledPackageId [PackageTarget]
+  -> ElaboratedInstallPlan
+  -> ElaboratedInstallPlan
 pruneInstallPlanToTargets perPkgTargetsMap =
-    either (\_ -> assert False undefined) id
-  . InstallPlan.new (IndependentGoals False)
-  . Graph.fromList
+  either (\_ -> assert False undefined) id
+    . InstallPlan.new (IndependentGoals False)
+    . Graph.fromList
     -- We have to do this in two passes
-  . pruneInstallPlanPass2
-  . pruneInstallPlanPass1 perPkgTargetsMap
-  . InstallPlan.toList
+    . pruneInstallPlanPass2
+    . pruneInstallPlanPass1 perPkgTargetsMap
+    . InstallPlan.toList
 
 -- | The first pass does three things:
 --
@@ -1436,36 +1487,32 @@ pruneInstallPlanToTargets perPkgTargetsMap =
 --   are used only by unneeded optional stanzas. These pruned deps are only
 --   used for the dependency closure and are not persisted in this pass.
 --
-pruneInstallPlanPass1 :: Map InstalledPackageId [PackageTarget]
-                      -> [ElaboratedPlanPackage]
-                      -> [ElaboratedPlanPackage]
-pruneInstallPlanPass1 perPkgTargetsMap pkgs =
-    map fst $
-    dependencyClosure
-      (installedPackageId . fst)  -- the pkg id
-      snd                         -- the pruned deps
-      [ (pkg', pruneOptionalDependencies pkg')
-      | pkg <- pkgs
-      , let pkg' = mapConfiguredPackage
-                     (pruneOptionalStanzas . setBuildTargets) pkg
-      ]
-      (Map.keys perPkgTargetsMap)
+pruneInstallPlanPass1
+  :: Map InstalledPackageId [PackageTarget]
+  -> [ElaboratedPlanPackage]
+  -> [ElaboratedPlanPackage]
+pruneInstallPlanPass1 perPkgTargetsMap pkgs = map fst $ dependencyClosure
+  (installedPackageId . fst)  -- the pkg id
+  snd                         -- the pruned deps
+  [ (pkg', pruneOptionalDependencies pkg')
+  | pkg <- pkgs
+  , let pkg' = mapConfiguredPackage (pruneOptionalStanzas . setBuildTargets) pkg
+  ]
+  (Map.keys perPkgTargetsMap)
   where
     -- Elaborate and set the targets we'll build for this package. This is just
     -- based on the targets from the user, not targets implied by reverse
     -- dependencies. Those comes in the second pass once we know the rev deps.
     --
-    setBuildTargets pkg =
-        pkg {
-          pkgBuildTargets   = buildTargets,
-          pkgReplTarget     = replTarget,
-          pkgBuildHaddocks  = buildHaddocks
-        }
+    setBuildTargets pkg = pkg { pkgBuildTargets  = buildTargets
+                              , pkgReplTarget    = replTarget
+                              , pkgBuildHaddocks = buildHaddocks
+                              }
       where
-        (buildTargets, replTarget, buildHaddocks)
-                = elaboratePackageTargets pkg targets
-        targets = fromMaybe []
-                $ Map.lookup (installedPackageId pkg) perPkgTargetsMap
+        (buildTargets, replTarget, buildHaddocks) =
+          elaboratePackageTargets pkg targets
+        targets =
+          fromMaybe [] $ Map.lookup (installedPackageId pkg) perPkgTargetsMap
 
     -- Decide whether or not to enable testsuites and benchmarks
     --
@@ -1486,9 +1533,10 @@ pruneInstallPlanPass1 perPkgTargetsMap pkgs =
     pruneOptionalStanzas pkg = pkg { pkgStanzasEnabled = stanzas }
       where
         stanzas :: Set OptionalStanza
-        stanzas = optionalStanzasRequiredByTargets  pkg
-               <> optionalStanzasRequestedByDefault pkg
-               <> optionalStanzasWithDepsAvailable availablePkgs pkg
+        stanzas =
+          optionalStanzasRequiredByTargets pkg
+            <> optionalStanzasRequestedByDefault pkg
+            <> optionalStanzasWithDepsAvailable availablePkgs pkg
 
     -- Calculate package dependencies but cut out those needed only by
     -- optional stanzas that we've determined we will not enable.
@@ -1498,36 +1546,31 @@ pruneInstallPlanPass1 perPkgTargetsMap pkgs =
     --
     pruneOptionalDependencies :: ElaboratedPlanPackage -> [InstalledPackageId]
     pruneOptionalDependencies (InstallPlan.Configured pkg) =
-        (CD.flatDeps . CD.filterDeps keepNeeded) (depends pkg)
+      (CD.flatDeps . CD.filterDeps keepNeeded) (depends pkg)
       where
-        keepNeeded (CD.ComponentTest  _) _ = TestStanzas  `Set.member` stanzas
+        keepNeeded (CD.ComponentTest  _) _ = TestStanzas `Set.member` stanzas
         keepNeeded (CD.ComponentBench _) _ = BenchStanzas `Set.member` stanzas
         keepNeeded _                     _ = True
         stanzas = pkgStanzasEnabled pkg
-    pruneOptionalDependencies pkg =
-        CD.flatDeps (depends pkg)
+    pruneOptionalDependencies pkg = CD.flatDeps (depends pkg)
 
-    optionalStanzasRequiredByTargets :: ElaboratedConfiguredPackage
-                                     -> Set OptionalStanza
-    optionalStanzasRequiredByTargets pkg =
-      Set.fromList
-        [ stanza
-        | ComponentTarget cname _ <- pkgBuildTargets pkg
-                                  ++ maybeToList (pkgReplTarget pkg)
-        , stanza <- maybeToList (componentOptionalStanza cname)
-        ]
+    optionalStanzasRequiredByTargets
+      :: ElaboratedConfiguredPackage -> Set OptionalStanza
+    optionalStanzasRequiredByTargets pkg = Set.fromList
+      [ stanza
+      | ComponentTarget cname _ <-
+        pkgBuildTargets pkg ++ maybeToList (pkgReplTarget pkg)
+      , stanza                  <- maybeToList (componentOptionalStanza cname)
+      ]
 
-    optionalStanzasRequestedByDefault :: ElaboratedConfiguredPackage
-                                      -> Set OptionalStanza
+    optionalStanzasRequestedByDefault
+      :: ElaboratedConfiguredPackage -> Set OptionalStanza
     optionalStanzasRequestedByDefault =
-        Map.keysSet
-      . Map.filter (id :: Bool -> Bool)
-      . pkgStanzasRequested
+      Map.keysSet . Map.filter (id :: Bool -> Bool) . pkgStanzasRequested
 
-    availablePkgs =
-      Set.fromList
-        [ installedPackageId pkg
-        | InstallPlan.PreExisting pkg <- pkgs ]
+    availablePkgs
+      = Set.fromList
+        [ installedPackageId pkg | InstallPlan.PreExisting pkg <- pkgs ]
 
 -- | Given a set of already installed packages @availablePkgs@,
 -- determine the set of available optional stanzas from @pkg@
@@ -1535,19 +1578,17 @@ pruneInstallPlanPass1 perPkgTargetsMap pkgs =
 -- to implement "sticky" testsuites, where once we have installed
 -- all of the deps needed for the test suite, we go ahead and
 -- enable it always.
-optionalStanzasWithDepsAvailable :: Set InstalledPackageId
-                                 -> ElaboratedConfiguredPackage
-                                 -> Set OptionalStanza
-optionalStanzasWithDepsAvailable availablePkgs pkg =
-    Set.fromList
-      [ stanza
-      | stanza <- Set.toList (pkgStanzasAvailable pkg)
-      , let deps :: [InstalledPackageId]
-            deps = map installedPackageId
-                 $ CD.select (optionalStanzaDeps stanza)
-                             (pkgDependencies pkg)
-      , all (`Set.member` availablePkgs) deps
-      ]
+optionalStanzasWithDepsAvailable
+  :: Set InstalledPackageId -> ElaboratedConfiguredPackage -> Set OptionalStanza
+optionalStanzasWithDepsAvailable availablePkgs pkg = Set.fromList
+  [ stanza
+  | stanza <- Set.toList (pkgStanzasAvailable pkg)
+  , let deps :: [InstalledPackageId]
+        deps =
+          map installedPackageId
+            $ CD.select (optionalStanzaDeps stanza) (pkgDependencies pkg)
+  , all (`Set.member`availablePkgs) deps
+  ]
   where
     optionalStanzaDeps TestStanzas  (CD.ComponentTest  _) = True
     optionalStanzaDeps BenchStanzas (CD.ComponentBench _) = True
@@ -1581,23 +1622,23 @@ optionalStanzasWithDepsAvailable availablePkgs pkg =
 -- first or second pass) doesn't mean that we build all (or even any) of them.
 -- That depends on which targets we picked in the first pass.
 --
-pruneInstallPlanPass2 :: [ElaboratedPlanPackage]
-                      -> [ElaboratedPlanPackage]
-pruneInstallPlanPass2 pkgs =
-    map (mapConfiguredPackage setStanzasDepsAndTargets) pkgs
+pruneInstallPlanPass2 :: [ElaboratedPlanPackage] -> [ElaboratedPlanPackage]
+pruneInstallPlanPass2 pkgs = map
+  (mapConfiguredPackage setStanzasDepsAndTargets)
+  pkgs
   where
-    setStanzasDepsAndTargets pkg =
-        pkg {
-          pkgStanzasEnabled = stanzas,
-          pkgDependencies   = CD.filterDeps keepNeeded (pkgDependencies pkg),
-          pkgBuildTargets   = pkgBuildTargets pkg ++ targetsRequiredForRevDeps
-        }
+    setStanzasDepsAndTargets pkg = pkg
+      { pkgStanzasEnabled = stanzas
+      , pkgDependencies   = CD.filterDeps keepNeeded (pkgDependencies pkg)
+      , pkgBuildTargets   = pkgBuildTargets pkg ++ targetsRequiredForRevDeps
+      }
       where
         stanzas :: Set OptionalStanza
-        stanzas = pkgStanzasEnabled pkg
-               <> optionalStanzasWithDepsAvailable availablePkgs pkg
+        stanzas =
+          pkgStanzasEnabled pkg
+            <> optionalStanzasWithDepsAvailable availablePkgs pkg
 
-        keepNeeded (CD.ComponentTest  _) _ = TestStanzas  `Set.member` stanzas
+        keepNeeded (CD.ComponentTest  _) _ = TestStanzas `Set.member` stanzas
         keepNeeded (CD.ComponentBench _) _ = BenchStanzas `Set.member` stanzas
         keepNeeded _                     _ = True
 
@@ -1613,13 +1654,13 @@ pruneInstallPlanPass2 pkgs =
 
     hasReverseLibDeps :: Set InstalledPackageId
     hasReverseLibDeps =
-      Set.fromList [ depid | pkg <- pkgs
-                           , depid <- CD.flatDeps (depends pkg) ]
+      Set.fromList [ depid | pkg <- pkgs, depid <- CD.flatDeps (depends pkg) ]
 
 
-mapConfiguredPackage :: (ElaboratedConfiguredPackage -> ElaboratedConfiguredPackage)
-                     -> ElaboratedPlanPackage
-                     -> ElaboratedPlanPackage
+mapConfiguredPackage
+  :: (ElaboratedConfiguredPackage -> ElaboratedConfiguredPackage)
+  -> ElaboratedPlanPackage
+  -> ElaboratedPlanPackage
 mapConfiguredPackage f (InstallPlan.Configured pkg) =
   InstallPlan.Configured (f pkg)
 mapConfiguredPackage _ pkg = pkg
@@ -1630,37 +1671,35 @@ componentOptionalStanza (Cabal.CBenchName _) = Just BenchStanzas
 componentOptionalStanza _                    = Nothing
 
 
-dependencyClosure :: (pkg -> InstalledPackageId)
-                  -> (pkg -> [InstalledPackageId])
-                  -> [pkg]
-                  -> [InstalledPackageId]
-                  -> [pkg]
+dependencyClosure
+  :: (pkg -> InstalledPackageId)
+  -> (pkg -> [InstalledPackageId])
+  -> [pkg]
+  -> [InstalledPackageId]
+  -> [pkg]
 dependencyClosure pkgid deps allpkgs =
-    map vertexToPkg
-  . concatMap Tree.flatten
-  . OldGraph.dfs graph
-  . map pkgidToVertex
+  map vertexToPkg . concatMap Tree.flatten . OldGraph.dfs graph . map
+    pkgidToVertex
   where
     (graph, vertexToPkg, pkgidToVertex) = dependencyGraph pkgid deps allpkgs
 
 -- TODO: Convert this to use Distribution.Compat.Graph, via a newtype
 -- which explicitly carries the accessors.
-dependencyGraph :: (pkg -> InstalledPackageId)
-                -> (pkg -> [InstalledPackageId])
-                -> [pkg]
-                -> (OldGraph.Graph,
-                    OldGraph.Vertex -> pkg,
-                    InstalledPackageId -> OldGraph.Vertex)
-dependencyGraph pkgid deps pkgs =
-    (graph, vertexToPkg', pkgidToVertex')
+dependencyGraph
+  :: (pkg -> InstalledPackageId)
+  -> (pkg -> [InstalledPackageId])
+  -> [pkg]
+  -> ( OldGraph.Graph
+     , OldGraph.Vertex -> pkg
+     , InstalledPackageId -> OldGraph.Vertex
+     )
+dependencyGraph pkgid deps pkgs = (graph, vertexToPkg', pkgidToVertex')
   where
     (graph, vertexToPkg, pkgidToVertex) =
-      OldGraph.graphFromEdges [ ( pkg, pkgid pkg, deps pkg )
-                           | pkg <- pkgs ]
-    vertexToPkg'   = (\(pkg,_,_) -> pkg)
-                   . vertexToPkg
-    pkgidToVertex' = fromMaybe (error "dependencyGraph: lookup failure")
-                   . pkgidToVertex
+      OldGraph.graphFromEdges [ (pkg, pkgid pkg, deps pkg) | pkg <- pkgs ]
+    vertexToPkg' = (\(pkg, _, _) -> pkg) . vertexToPkg
+    pkgidToVertex' =
+      fromMaybe (error "dependencyGraph: lookup failure") . pkgidToVertex
 
 
 ---------------------------
@@ -1699,19 +1738,15 @@ packageSetupScriptStyle pkg
   , Just setupbi <- PD.setupBuildInfo pkg -- does have a custom-setup stanza
   , not (PD.defaultSetupDepends setupbi)  -- but not one we added internally
   = SetupCustomExplicitDeps
-
   | buildType == PD.Custom
   , Just setupbi <- PD.setupBuildInfo pkg -- we get this case post-solver as
   , PD.defaultSetupDepends setupbi        -- the solver fills in the deps
   = SetupCustomImplicitDeps
-
   | buildType == PD.Custom
   , Nothing <- PD.setupBuildInfo pkg      -- we get this case pre-solver
   = SetupCustomImplicitDeps
-
   | PD.specVersion pkg > cabalVersion -- one cabal-install is built against
   = SetupNonCustomExternalLib
-
   | otherwise
   = SetupNonCustomInternalLib
   where
@@ -1733,60 +1768,60 @@ packageSetupScriptStyle pkg
 -- we still need to distinguish the case of explicit and implict setup deps.
 -- See 'rememberImplicitSetupDeps'.
 --
-defaultSetupDeps :: Compiler -> Platform
-                 -> PD.PackageDescription
-                 -> Maybe [Dependency]
-defaultSetupDeps compiler platform pkg =
-    case packageSetupScriptStyle pkg of
+defaultSetupDeps
+  :: Compiler -> Platform -> PD.PackageDescription -> Maybe [Dependency]
+defaultSetupDeps compiler platform pkg = case packageSetupScriptStyle pkg of
 
       -- For packages with build type custom that do not specify explicit
       -- setup dependencies, we add a dependency on Cabal and a number
       -- of other packages.
-      SetupCustomImplicitDeps ->
-        Just $
-        [ Dependency depPkgname anyVersion
-        | depPkgname <- legacyCustomSetupPkgs compiler platform ] ++
-        [ Dependency cabalPkgname cabalConstraint
-        | packageName pkg /= cabalPkgname ]
-        where
-          -- The Cabal dep is slightly special:
-          -- * We omit the dep for the Cabal lib itself, since it bootstraps.
-          -- * We constrain it to be >= 1.18 < 2
-          --
-          cabalConstraint   = orLaterVersion cabalCompatMinVer
-                                `intersectVersionRanges`
-                              orLaterVersion (PD.specVersion pkg)
-                                `intersectVersionRanges`
-                              earlierVersion cabalCompatMaxVer
-          -- The idea here is that at some point we will make significant
-          -- breaking changes to the Cabal API that Setup.hs scripts use.
-          -- So for old custom Setup scripts that do not specify explicit
-          -- constraints, we constrain them to use a compatible Cabal version.
-          -- The exact version where we'll make this API break has not yet been
-          -- decided, so for the meantime we guess at 2.x.
-          cabalCompatMaxVer = Version [2] []
-          -- In principle we can talk to any old Cabal version, and we need to
-          -- be able to do that for custom Setup scripts that require older
-          -- Cabal lib versions. However in practice we have currently have
-          -- problems with Cabal-1.16. (1.16 does not know about build targets)
-          -- If this is fixed we can relax this constraint.
-          cabalCompatMinVer = Version [1,18] []
+  SetupCustomImplicitDeps ->
+    Just
+      $  [ Dependency depPkgname anyVersion
+         | depPkgname <- legacyCustomSetupPkgs compiler platform
+         ]
+      ++ [ Dependency cabalPkgname cabalConstraint
+         | packageName pkg /= cabalPkgname
+         ]
 
-      -- For other build types (like Simple) if we still need to compile an
-      -- external Setup.hs, it'll be one of the simple ones that only depends
-      -- on Cabal and base.
-      SetupNonCustomExternalLib ->
-        Just [ Dependency cabalPkgname cabalConstraint
-             , Dependency basePkgname  anyVersion ]
-        where
-          cabalConstraint = orLaterVersion (PD.specVersion pkg)
+  -- For other build types (like Simple) if we still need to compile an
+  -- external Setup.hs, it'll be one of the simple ones that only depends
+  -- on Cabal and base.
+    where
+      -- The Cabal dep is slightly special:
+      -- * We omit the dep for the Cabal lib itself, since it bootstraps.
+      -- * We constrain it to be >= 1.18 < 2
+      --
+      cabalConstraint =
+        orLaterVersion cabalCompatMinVer
+          `intersectVersionRanges` orLaterVersion (PD.specVersion pkg)
+          `intersectVersionRanges` earlierVersion cabalCompatMaxVer
+      -- The idea here is that at some point we will make significant
+      -- breaking changes to the Cabal API that Setup.hs scripts use.
+      -- So for old custom Setup scripts that do not specify explicit
+      -- constraints, we constrain them to use a compatible Cabal version.
+      -- The exact version where we'll make this API break has not yet been
+      -- decided, so for the meantime we guess at 2.x.
+      cabalCompatMaxVer = Version [2] []
+      -- In principle we can talk to any old Cabal version, and we need to
+      -- be able to do that for custom Setup scripts that require older
+      -- Cabal lib versions. However in practice we have currently have
+      -- problems with Cabal-1.16. (1.16 does not know about build targets)
+      -- If this is fixed we can relax this constraint.
+      cabalCompatMinVer = Version [1, 18] []
+  SetupNonCustomExternalLib -> Just
+    [Dependency cabalPkgname cabalConstraint, Dependency basePkgname anyVersion]
 
-      -- The internal setup wrapper method has no deps at all.
-      SetupNonCustomInternalLib -> Just []
+  -- The internal setup wrapper method has no deps at all.
+    where
+      cabalConstraint = orLaterVersion (PD.specVersion pkg)
+  SetupNonCustomInternalLib -> Just []
 
-      SetupCustomExplicitDeps ->
-        error $ "defaultSetupDeps: called for a package with explicit "
-             ++ "setup deps: " ++ display (packageId pkg)
+  SetupCustomExplicitDeps ->
+    error
+      $  "defaultSetupDeps: called for a package with explicit "
+      ++ "setup deps: "
+      ++ display (packageId pkg)
 
 
 -- | Work out which version of the Cabal spec we will be using to talk to the
@@ -1796,48 +1831,59 @@ defaultSetupDeps compiler platform pkg =
 -- of what the solver picked for us, based on the explicit setup deps or the
 -- ones added implicitly by 'defaultSetupDeps'.
 --
-packageSetupScriptSpecVersion :: Package pkg
-                              => SetupScriptStyle
-                              -> PD.PackageDescription
-                              -> ComponentDeps [pkg]
-                              -> Version
+packageSetupScriptSpecVersion
+  :: Package pkg
+  => SetupScriptStyle
+  -> PD.PackageDescription
+  -> ComponentDeps [pkg]
+  -> Version
 
 -- We're going to be using the internal Cabal library, so the spec version of
 -- that is simply the version of the Cabal library that cabal-install has been
 -- built with.
-packageSetupScriptSpecVersion SetupNonCustomInternalLib _ _ =
-    cabalVersion
+packageSetupScriptSpecVersion SetupNonCustomInternalLib _ _ = cabalVersion
 
 -- If we happen to be building the Cabal lib itself then because that
 -- bootstraps itself then we use the version of the lib we're building.
-packageSetupScriptSpecVersion SetupCustomImplicitDeps pkg _
-  | packageName pkg == cabalPkgname
-  = packageVersion pkg
+packageSetupScriptSpecVersion SetupCustomImplicitDeps pkg _ | packageName pkg
+  == cabalPkgname =
+  packageVersion pkg
 
 -- In all other cases we have a look at what version of the Cabal lib the
 -- solver picked. Or if it didn't depend on Cabal at all (which is very rare)
 -- then we look at the .cabal file to see what spec version it declares.
 packageSetupScriptSpecVersion _ pkg deps =
-    case find ((cabalPkgname ==) . packageName) (CD.setupDeps deps) of
-      Just dep -> packageVersion dep
-      Nothing  -> PD.specVersion pkg
+  case find ((cabalPkgname==) . packageName) (CD.setupDeps deps) of
+    Just dep -> packageVersion dep
+    Nothing  -> PD.specVersion pkg
 
 
 cabalPkgname, basePkgname :: PackageName
 cabalPkgname = PackageName "Cabal"
-basePkgname  = PackageName "base"
+basePkgname = PackageName "base"
 
 
 legacyCustomSetupPkgs :: Compiler -> Platform -> [PackageName]
 legacyCustomSetupPkgs compiler (Platform _ os) =
-    map PackageName $
-        [ "array", "base", "binary", "bytestring", "containers"
-        , "deepseq", "directory", "filepath", "old-time", "pretty"
-        , "process", "time", "transformers" ]
-     ++ [ "Win32" | os == Windows ]
-     ++ [ "unix"  | os /= Windows ]
-     ++ [ "ghc-prim"         | isGHC ]
-     ++ [ "template-haskell" | isGHC ]
+  map PackageName
+    $  [ "array"
+       , "base"
+       , "binary"
+       , "bytestring"
+       , "containers"
+       , "deepseq"
+       , "directory"
+       , "filepath"
+       , "old-time"
+       , "pretty"
+       , "process"
+       , "time"
+       , "transformers"
+       ]
+    ++ [ "Win32" | os == Windows ]
+    ++ [ "unix" | os /= Windows ]
+    ++ [ "ghc-prim" | isGHC ]
+    ++ [ "template-haskell" | isGHC ]
   where
     isGHC = compilerCompatFlavor GHC compiler
 
@@ -1851,34 +1897,34 @@ legacyCustomSetupPkgs compiler (Platform _ os) =
 -- be tricky since we would have to allow the Setup access to all the packages
 -- in the store and local dbs.
 
-setupHsScriptOptions :: ElaboratedReadyPackage
-                     -> ElaboratedSharedConfig
-                     -> FilePath
-                     -> FilePath
-                     -> Bool
-                     -> Lock
-                     -> SetupScriptOptions
-setupHsScriptOptions (ReadyPackage ElaboratedConfiguredPackage{..})
-                     ElaboratedSharedConfig{..} srcdir builddir
-                     isParallelBuild cacheLock =
-    SetupScriptOptions {
-      useCabalVersion          = thisVersion pkgSetupScriptCliVersion,
-      useCabalSpecVersion      = Just pkgSetupScriptCliVersion,
-      useCompiler              = Just pkgConfigCompiler,
-      usePlatform              = Just pkgConfigPlatform,
-      usePackageDB             = pkgSetupPackageDBStack,
-      usePackageIndex          = Nothing,
-      useDependencies          = [ (uid, srcid)
-                                 | ConfiguredId srcid uid <- CD.setupDeps pkgDependencies ],
-      useDependenciesExclusive = True,
-      useVersionMacros         = pkgSetupScriptStyle == SetupCustomExplicitDeps,
-      useProgramConfig         = pkgConfigCompilerProgs,
-      useDistPref              = builddir,
-      useLoggingHandle         = Nothing, -- this gets set later
-      useWorkingDir            = Just srcdir,
-      useWin32CleanHack        = False,   --TODO: [required eventually]
-      forceExternalSetupMethod = isParallelBuild,
-      setupCacheLock           = Just cacheLock
+setupHsScriptOptions
+  :: ElaboratedReadyPackage
+  -> ElaboratedSharedConfig
+  -> FilePath
+  -> FilePath
+  -> Bool
+  -> Lock
+  -> SetupScriptOptions
+setupHsScriptOptions (ReadyPackage ElaboratedConfiguredPackage {..}) ElaboratedSharedConfig {..} srcdir builddir isParallelBuild cacheLock
+  = SetupScriptOptions
+    { useCabalVersion          = thisVersion pkgSetupScriptCliVersion
+    , useCabalSpecVersion      = Just pkgSetupScriptCliVersion
+    , useCompiler              = Just pkgConfigCompiler
+    , usePlatform              = Just pkgConfigPlatform
+    , usePackageDB             = pkgSetupPackageDBStack
+    , usePackageIndex          = Nothing
+    , useDependencies = [ (uid, srcid)
+                        | ConfiguredId srcid uid <- CD.setupDeps pkgDependencies
+                        ]
+    , useDependenciesExclusive = True
+    , useVersionMacros         = pkgSetupScriptStyle == SetupCustomExplicitDeps
+    , useProgramConfig         = pkgConfigCompilerProgs
+    , useDistPref              = builddir
+    , useLoggingHandle         = Nothing -- this gets set later
+    , useWorkingDir            = Just srcdir
+    , useWin32CleanHack        = False   --TODO: [required eventually]
+    , forceExternalSetupMethod = isParallelBuild
+    , setupCacheLock           = Just cacheLock
     }
 
 
@@ -1886,36 +1932,33 @@ setupHsScriptOptions (ReadyPackage ElaboratedConfiguredPackage{..})
 --
 -- TODO: [code cleanup] make InstallDirs.defaultInstallDirs pure.
 --
-userInstallDirTemplates :: Compiler
-                        -> IO InstallDirs.InstallDirTemplates
+userInstallDirTemplates :: Compiler -> IO InstallDirs.InstallDirTemplates
 userInstallDirTemplates compiler = do
-    InstallDirs.defaultInstallDirs
-                  (compilerFlavor compiler)
-                  True  -- user install
-                  False -- unused
+  InstallDirs.defaultInstallDirs (compilerFlavor compiler) True  -- user install
+                                                                False -- unused
 
-storePackageInstallDirs :: CabalDirLayout
-                        -> CompilerId
-                        -> InstalledPackageId
-                        -> InstallDirs.InstallDirs FilePath
-storePackageInstallDirs CabalDirLayout{cabalStorePackageDirectory}
-                        compid ipkgid =
-    InstallDirs.InstallDirs {..}
+storePackageInstallDirs
+  :: CabalDirLayout
+  -> CompilerId
+  -> InstalledPackageId
+  -> InstallDirs.InstallDirs FilePath
+storePackageInstallDirs CabalDirLayout { cabalStorePackageDirectory } compid ipkgid
+  = InstallDirs.InstallDirs {..}
   where
-    prefix       = cabalStorePackageDirectory compid ipkgid
-    bindir       = prefix </> "bin"
-    libdir       = prefix </> "lib"
-    libsubdir    = ""
-    dynlibdir    = libdir
-    libexecdir   = prefix </> "libexec"
-    includedir   = libdir </> "include"
-    datadir      = prefix </> "share"
-    datasubdir   = ""
-    docdir       = datadir </> "doc"
-    mandir       = datadir </> "man"
-    htmldir      = docdir  </> "html"
-    haddockdir   = htmldir
-    sysconfdir   = prefix </> "etc"
+    prefix     = cabalStorePackageDirectory compid ipkgid
+    bindir     = prefix </> "bin"
+    libdir     = prefix </> "lib"
+    libsubdir  = ""
+    dynlibdir  = libdir
+    libexecdir = prefix </> "libexec"
+    includedir = libdir </> "include"
+    datadir    = prefix </> "share"
+    datasubdir = ""
+    docdir     = datadir </> "doc"
+    mandir     = datadir </> "man"
+    htmldir    = docdir </> "html"
+    haddockdir = htmldir
+    sysconfdir = prefix </> "etc"
 
 
 --TODO: [code cleanup] perhaps reorder this code
@@ -1923,17 +1966,16 @@ storePackageInstallDirs CabalDirLayout{cabalStorePackageDirectory}
 -- make the various Setup.hs {configure,build,copy} flags
 
 
-setupHsConfigureFlags :: ElaboratedReadyPackage
-                      -> ElaboratedSharedConfig
-                      -> Verbosity
-                      -> FilePath
-                      -> Cabal.ConfigFlags
-setupHsConfigureFlags (ReadyPackage
-                         pkg@ElaboratedConfiguredPackage{..})
-                      sharedConfig@ElaboratedSharedConfig{..}
-                      verbosity builddir =
-    sanityCheckElaboratedConfiguredPackage sharedConfig pkg
-        (Cabal.ConfigFlags {..})
+setupHsConfigureFlags
+  :: ElaboratedReadyPackage
+  -> ElaboratedSharedConfig
+  -> Verbosity
+  -> FilePath
+  -> Cabal.ConfigFlags
+setupHsConfigureFlags (ReadyPackage pkg@ElaboratedConfiguredPackage {..}) sharedConfig@ElaboratedSharedConfig {..} verbosity builddir
+  = sanityCheckElaboratedConfiguredPackage sharedConfig
+                                           pkg
+                                           (Cabal.ConfigFlags {..})
   where
     configDistPref            = toFlag builddir
     configCabalFilePath       = mempty
@@ -1980,56 +2022,59 @@ setupHsConfigureFlags (ReadyPackage
     configProgPrefix          = maybe mempty toFlag pkgProgPrefix
     configProgSuffix          = maybe mempty toFlag pkgProgSuffix
 
-    configInstallDirs         = fmap (toFlag . InstallDirs.toPathTemplate)
-                                     pkgInstallDirs
+    configInstallDirs =
+      fmap (toFlag . InstallDirs.toPathTemplate) pkgInstallDirs
 
     -- we only use configDependencies, unless we're talking to an old Cabal
     -- in which case we use configConstraints
-    configDependencies        = [ (packageName srcid, uid)
-                                | ConfiguredId srcid uid <- CD.nonSetupDeps pkgDependencies ]
-    configConstraints         = [ thisPackageVersion srcid
-                                | ConfiguredId srcid _uid <- CD.nonSetupDeps pkgDependencies ]
+    configDependencies =
+      [ (packageName srcid, uid)
+      | ConfiguredId srcid uid <- CD.nonSetupDeps pkgDependencies
+      ]
+    configConstraints =
+      [ thisPackageVersion srcid
+      | ConfiguredId srcid _uid <- CD.nonSetupDeps pkgDependencies
+      ]
 
     -- explicitly clear, then our package db stack
     -- TODO: [required eventually] have to do this differently for older Cabal versions
-    configPackageDBs          = Nothing : map Just pkgBuildPackageDBStack
+    configPackageDBs         = Nothing : map Just pkgBuildPackageDBStack
 
-    configTests               = toFlag (TestStanzas  `Set.member` pkgStanzasEnabled)
-    configBenchmarks          = toFlag (BenchStanzas `Set.member` pkgStanzasEnabled)
+    configTests = toFlag (TestStanzas `Set.member` pkgStanzasEnabled)
+    configBenchmarks = toFlag (BenchStanzas `Set.member` pkgStanzasEnabled)
 
-    configExactConfiguration  = toFlag True
-    configFlagError           = mempty --TODO: [research required] appears not to be implemented
-    configRelocatable         = mempty --TODO: [research required] ???
-    configScratchDir          = mempty -- never use
-    configUserInstall         = mempty -- don't rely on defaults
-    configPrograms_           = mempty -- never use, shouldn't exist
+    configExactConfiguration = toFlag True
+    configFlagError          = mempty --TODO: [research required] appears not to be implemented
+    configRelocatable        = mempty --TODO: [research required] ???
+    configScratchDir         = mempty -- never use
+    configUserInstall        = mempty -- don't rely on defaults
+    configPrograms_          = mempty -- never use, shouldn't exist
 
 
-setupHsBuildFlags :: ElaboratedConfiguredPackage
-                  -> ElaboratedSharedConfig
-                  -> Verbosity
-                  -> FilePath
-                  -> Cabal.BuildFlags
-setupHsBuildFlags ElaboratedConfiguredPackage{..} _ verbosity builddir =
-    Cabal.BuildFlags {
-      buildProgramPaths = mempty, --unused, set at configure time
-      buildProgramArgs  = mempty, --unused, set at configure time
-      buildVerbosity    = toFlag verbosity,
-      buildDistPref     = toFlag builddir,
-      buildAssumeDepsUpToDate = toFlag False,
-      buildNumJobs      = mempty, --TODO: [nice to have] sometimes want to use toFlag (Just numBuildJobs),
-      buildArgs         = mempty  -- unused, passed via args not flags
+setupHsBuildFlags
+  :: ElaboratedConfiguredPackage
+  -> ElaboratedSharedConfig
+  -> Verbosity
+  -> FilePath
+  -> Cabal.BuildFlags
+setupHsBuildFlags ElaboratedConfiguredPackage {..} _ verbosity builddir =
+  Cabal.BuildFlags
+    { buildProgramPaths       = mempty --unused, set at configure time
+    , buildProgramArgs        = mempty --unused, set at configure time
+    , buildVerbosity          = toFlag verbosity
+    , buildDistPref           = toFlag builddir
+    , buildAssumeDepsUpToDate = toFlag False
+    , buildNumJobs            = mempty --TODO: [nice to have] sometimes want to use toFlag (Just numBuildJobs),
+    , buildArgs               = mempty  -- unused, passed via args not flags
     }
 
 
 setupHsBuildArgs :: ElaboratedConfiguredPackage -> [String]
-setupHsBuildArgs pkg =
-    map (showComponentTarget pkg) (pkgBuildTargets pkg)
+setupHsBuildArgs pkg = map (showComponentTarget pkg) (pkgBuildTargets pkg)
 
 
 showComponentTarget :: ElaboratedConfiguredPackage -> ComponentTarget -> String
-showComponentTarget pkg =
-    showBuildTarget . toBuildTarget
+showComponentTarget pkg = showBuildTarget . toBuildTarget
   where
     showBuildTarget t =
       Cabal.showBuildTarget (qlBuildTarget t) (packageId pkg) t
@@ -2038,98 +2083,100 @@ showComponentTarget pkg =
     qlBuildTarget _                            = Cabal.QL3
 
     toBuildTarget :: ComponentTarget -> Cabal.BuildTarget
-    toBuildTarget (ComponentTarget cname subtarget) =
-      case subtarget of
-        WholeComponent     -> Cabal.BuildTargetComponent cname
-        ModuleTarget mname -> Cabal.BuildTargetModule    cname mname
-        FileTarget   fname -> Cabal.BuildTargetFile      cname fname
+    toBuildTarget (ComponentTarget cname subtarget) = case subtarget of
+      WholeComponent     -> Cabal.BuildTargetComponent cname
+      ModuleTarget mname -> Cabal.BuildTargetModule cname mname
+      FileTarget   fname -> Cabal.BuildTargetFile cname fname
 
 
-setupHsReplFlags :: ElaboratedConfiguredPackage
-                 -> ElaboratedSharedConfig
-                 -> Verbosity
-                 -> FilePath
-                 -> Cabal.ReplFlags
-setupHsReplFlags ElaboratedConfiguredPackage{..} _ verbosity builddir =
-    Cabal.ReplFlags {
-      replProgramPaths = mempty, --unused, set at configure time
-      replProgramArgs  = mempty, --unused, set at configure time
-      replVerbosity    = toFlag verbosity,
-      replDistPref     = toFlag builddir,
-      replReload       = mempty  --only used as callback from repl
+setupHsReplFlags
+  :: ElaboratedConfiguredPackage
+  -> ElaboratedSharedConfig
+  -> Verbosity
+  -> FilePath
+  -> Cabal.ReplFlags
+setupHsReplFlags ElaboratedConfiguredPackage {..} _ verbosity builddir =
+  Cabal.ReplFlags
+    { replProgramPaths = mempty --unused, set at configure time
+    , replProgramArgs  = mempty --unused, set at configure time
+    , replVerbosity    = toFlag verbosity
+    , replDistPref     = toFlag builddir
+    , replReload       = mempty  --only used as callback from repl
     }
 
 
 setupHsReplArgs :: ElaboratedConfiguredPackage -> [String]
 setupHsReplArgs pkg =
-    maybe [] (\t -> [showComponentTarget pkg t]) (pkgReplTarget pkg)
+  maybe [] (\t -> [showComponentTarget pkg t]) (pkgReplTarget pkg)
     --TODO: should be able to give multiple modules in one component
 
 
-setupHsCopyFlags :: ElaboratedConfiguredPackage
-                 -> ElaboratedSharedConfig
-                 -> Verbosity
-                 -> FilePath
-                 -> Cabal.CopyFlags
-setupHsCopyFlags _ _ verbosity builddir =
-    Cabal.CopyFlags {
+setupHsCopyFlags
+  :: ElaboratedConfiguredPackage
+  -> ElaboratedSharedConfig
+  -> Verbosity
+  -> FilePath
+  -> Cabal.CopyFlags
+setupHsCopyFlags _ _ verbosity builddir = Cabal.CopyFlags
+  {
       --TODO: [nice to have] we currently just rely on Setup.hs copy to always do the right
       -- thing, but perhaps we ought really to copy into an image dir and do
       -- some sanity checks and move into the final location ourselves
-      copyArgs      = [], -- TODO: could use this to only copy what we enabled
-      copyDest      = toFlag InstallDirs.NoCopyDest,
-      copyDistPref  = toFlag builddir,
-      copyAssumeDepsUpToDate = toFlag False,
-      copyVerbosity = toFlag verbosity
-    }
+    copyArgs               = [] -- TODO: could use this to only copy what we enabled
+  , copyDest               = toFlag InstallDirs.NoCopyDest
+  , copyDistPref           = toFlag builddir
+  , copyAssumeDepsUpToDate = toFlag False
+  , copyVerbosity          = toFlag verbosity
+  }
 
-setupHsRegisterFlags :: ElaboratedConfiguredPackage
-                     -> ElaboratedSharedConfig
-                     -> Verbosity
-                     -> FilePath
-                     -> FilePath
-                     -> Cabal.RegisterFlags
-setupHsRegisterFlags ElaboratedConfiguredPackage {pkgBuildStyle} _
-                     verbosity builddir pkgConfFile =
-    Cabal.RegisterFlags {
-      regPackageDB   = mempty,  -- misfeature
-      regGenScript   = mempty,  -- never use
-      regGenPkgConf  = toFlag (Just pkgConfFile),
-      regInPlace     = case pkgBuildStyle of
-                         BuildInplaceOnly -> toFlag True
-                         _                -> toFlag False,
-      regPrintId     = mempty,  -- never use
-      regDistPref    = toFlag builddir,
-      regVerbosity   = toFlag verbosity,
+setupHsRegisterFlags
+  :: ElaboratedConfiguredPackage
+  -> ElaboratedSharedConfig
+  -> Verbosity
+  -> FilePath
+  -> FilePath
+  -> Cabal.RegisterFlags
+setupHsRegisterFlags ElaboratedConfiguredPackage { pkgBuildStyle } _ verbosity builddir pkgConfFile
+  = Cabal.RegisterFlags
+    { regPackageDB          = mempty  -- misfeature
+    , regGenScript          = mempty  -- never use
+    , regGenPkgConf         = toFlag (Just pkgConfFile)
+    , regInPlace            = case pkgBuildStyle of
+      BuildInplaceOnly -> toFlag True
+      _                -> toFlag False
+    , regPrintId            = mempty  -- never use
+    , regDistPref           = toFlag builddir
+    , regVerbosity          = toFlag verbosity
       -- Currently not used, because this is per-package.
-      regAssumeDepsUpToDate = toFlag False,
-      regArgs        = []
+    , regAssumeDepsUpToDate = toFlag False
+    , regArgs               = []
     }
 
-setupHsHaddockFlags :: ElaboratedConfiguredPackage
-                    -> ElaboratedSharedConfig
-                    -> Verbosity
-                    -> FilePath
-                    -> Cabal.HaddockFlags
-setupHsHaddockFlags ElaboratedConfiguredPackage{..} _ verbosity builddir =
-    Cabal.HaddockFlags {
-      haddockProgramPaths  = mempty, --unused, set at configure time
-      haddockProgramArgs   = mempty, --unused, set at configure time
-      haddockHoogle        = toFlag pkgHaddockHoogle,
-      haddockHtml          = toFlag pkgHaddockHtml,
-      haddockHtmlLocation  = maybe mempty toFlag pkgHaddockHtmlLocation,
-      haddockForHackage    = mempty, --TODO: new flag
-      haddockExecutables   = toFlag pkgHaddockExecutables,
-      haddockTestSuites    = toFlag pkgHaddockTestSuites,
-      haddockBenchmarks    = toFlag pkgHaddockBenchmarks,
-      haddockInternal      = toFlag pkgHaddockInternal,
-      haddockCss           = maybe mempty toFlag pkgHaddockCss,
-      haddockHscolour      = toFlag pkgHaddockHscolour,
-      haddockHscolourCss   = maybe mempty toFlag pkgHaddockHscolourCss,
-      haddockContents      = maybe mempty toFlag pkgHaddockContents,
-      haddockDistPref      = toFlag builddir,
-      haddockKeepTempFiles = mempty, --TODO: from build settings
-      haddockVerbosity     = toFlag verbosity
+setupHsHaddockFlags
+  :: ElaboratedConfiguredPackage
+  -> ElaboratedSharedConfig
+  -> Verbosity
+  -> FilePath
+  -> Cabal.HaddockFlags
+setupHsHaddockFlags ElaboratedConfiguredPackage {..} _ verbosity builddir =
+  Cabal.HaddockFlags
+    { haddockProgramPaths  = mempty --unused, set at configure time
+    , haddockProgramArgs   = mempty --unused, set at configure time
+    , haddockHoogle        = toFlag pkgHaddockHoogle
+    , haddockHtml          = toFlag pkgHaddockHtml
+    , haddockHtmlLocation  = maybe mempty toFlag pkgHaddockHtmlLocation
+    , haddockForHackage    = mempty --TODO: new flag
+    , haddockExecutables   = toFlag pkgHaddockExecutables
+    , haddockTestSuites    = toFlag pkgHaddockTestSuites
+    , haddockBenchmarks    = toFlag pkgHaddockBenchmarks
+    , haddockInternal      = toFlag pkgHaddockInternal
+    , haddockCss           = maybe mempty toFlag pkgHaddockCss
+    , haddockHscolour      = toFlag pkgHaddockHscolour
+    , haddockHscolourCss   = maybe mempty toFlag pkgHaddockHscolourCss
+    , haddockContents      = maybe mempty toFlag pkgHaddockContents
+    , haddockDistPref      = toFlag builddir
+    , haddockKeepTempFiles = mempty --TODO: from build settings
+    , haddockVerbosity     = toFlag verbosity
     }
 
 {-
@@ -2185,71 +2232,62 @@ setupHsTestFlags _ _ verbosity builddir =
 -- TODO: [required eventually] for safety of concurrent installs, we must make sure we register but
 -- not replace installed packages with ghc-pkg.
 
-packageHashInputs :: ElaboratedSharedConfig
-                  -> ElaboratedConfiguredPackage
-                  -> PackageHashInputs
 packageHashInputs
-    pkgshared
-    pkg@ElaboratedConfiguredPackage{
-      pkgSourceId,
-      pkgSourceHash = Just srchash,
-      pkgDependencies
-    } =
-    PackageHashInputs {
-      pkgHashPkgId       = pkgSourceId,
-      pkgHashSourceHash  = srchash,
-      pkgHashDirectDeps  = Set.fromList
-                             [ installedPackageId dep
-                             | dep <- CD.select relevantDeps pkgDependencies ],
-      pkgHashOtherConfig = packageHashConfigInputs pkgshared pkg
+  :: ElaboratedSharedConfig -> ElaboratedConfiguredPackage -> PackageHashInputs
+packageHashInputs pkgshared pkg@ElaboratedConfiguredPackage { pkgSourceId, pkgSourceHash = Just srchash, pkgDependencies }
+  = PackageHashInputs
+    { pkgHashPkgId       = pkgSourceId
+    , pkgHashSourceHash  = srchash
+    , pkgHashDirectDeps  = Set.fromList
+      [ installedPackageId dep | dep <- CD.select relevantDeps pkgDependencies ]
+    , pkgHashOtherConfig = packageHashConfigInputs pkgshared pkg
     }
   where
     -- Obviously the main deps are relevant
-    relevantDeps CD.ComponentLib       = True
+    relevantDeps CD.ComponentLib        = True
     relevantDeps (CD.ComponentSubLib _) = True
-    relevantDeps (CD.ComponentExe _)   = True
+    relevantDeps (CD.ComponentExe    _) = True
     -- Setup deps can affect the Setup.hs behaviour and thus what is built
-    relevantDeps  CD.ComponentSetup    = True
+    relevantDeps CD.ComponentSetup      = True
     -- However testsuites and benchmarks do not get installed and should not
     -- affect the result, so we do not include them.
-    relevantDeps (CD.ComponentTest  _) = False
-    relevantDeps (CD.ComponentBench _) = False
+    relevantDeps (CD.ComponentTest  _)  = False
+    relevantDeps (CD.ComponentBench _)  = False
 
 packageHashInputs _ pkg =
-    error $ "packageHashInputs: only for packages with source hashes. "
-         ++ display (packageId pkg)
+  error
+    $  "packageHashInputs: only for packages with source hashes. "
+    ++ display (packageId pkg)
 
-packageHashConfigInputs :: ElaboratedSharedConfig
-                        -> ElaboratedConfiguredPackage
-                        -> PackageHashConfigInputs
 packageHashConfigInputs
-    ElaboratedSharedConfig{..}
-    ElaboratedConfiguredPackage{..} =
-
-    PackageHashConfigInputs {
-      pkgHashCompilerId          = compilerId pkgConfigCompiler,
-      pkgHashPlatform            = pkgConfigPlatform,
-      pkgHashFlagAssignment      = pkgFlagAssignment,
-      pkgHashConfigureScriptArgs = pkgConfigureScriptArgs,
-      pkgHashVanillaLib          = pkgVanillaLib,
-      pkgHashSharedLib           = pkgSharedLib,
-      pkgHashDynExe              = pkgDynExe,
-      pkgHashGHCiLib             = pkgGHCiLib,
-      pkgHashProfLib             = pkgProfLib,
-      pkgHashProfExe             = pkgProfExe,
-      pkgHashProfLibDetail       = pkgProfLibDetail,
-      pkgHashProfExeDetail       = pkgProfExeDetail,
-      pkgHashCoverage            = pkgCoverage,
-      pkgHashOptimization        = pkgOptimization,
-      pkgHashSplitObjs           = pkgSplitObjs,
-      pkgHashStripLibs           = pkgStripLibs,
-      pkgHashStripExes           = pkgStripExes,
-      pkgHashDebugInfo           = pkgDebugInfo,
-      pkgHashExtraLibDirs        = pkgExtraLibDirs,
-      pkgHashExtraFrameworkDirs  = pkgExtraFrameworkDirs,
-      pkgHashExtraIncludeDirs    = pkgExtraIncludeDirs,
-      pkgHashProgPrefix          = pkgProgPrefix,
-      pkgHashProgSuffix          = pkgProgSuffix
+  :: ElaboratedSharedConfig
+  -> ElaboratedConfiguredPackage
+  -> PackageHashConfigInputs
+packageHashConfigInputs ElaboratedSharedConfig {..} ElaboratedConfiguredPackage {..}
+  = PackageHashConfigInputs
+    { pkgHashCompilerId          = compilerId pkgConfigCompiler
+    , pkgHashPlatform            = pkgConfigPlatform
+    , pkgHashFlagAssignment      = pkgFlagAssignment
+    , pkgHashConfigureScriptArgs = pkgConfigureScriptArgs
+    , pkgHashVanillaLib          = pkgVanillaLib
+    , pkgHashSharedLib           = pkgSharedLib
+    , pkgHashDynExe              = pkgDynExe
+    , pkgHashGHCiLib             = pkgGHCiLib
+    , pkgHashProfLib             = pkgProfLib
+    , pkgHashProfExe             = pkgProfExe
+    , pkgHashProfLibDetail       = pkgProfLibDetail
+    , pkgHashProfExeDetail       = pkgProfExeDetail
+    , pkgHashCoverage            = pkgCoverage
+    , pkgHashOptimization        = pkgOptimization
+    , pkgHashSplitObjs           = pkgSplitObjs
+    , pkgHashStripLibs           = pkgStripLibs
+    , pkgHashStripExes           = pkgStripExes
+    , pkgHashDebugInfo           = pkgDebugInfo
+    , pkgHashExtraLibDirs        = pkgExtraLibDirs
+    , pkgHashExtraFrameworkDirs  = pkgExtraFrameworkDirs
+    , pkgHashExtraIncludeDirs    = pkgExtraIncludeDirs
+    , pkgHashProgPrefix          = pkgProgPrefix
+    , pkgHashProgSuffix          = pkgProgSuffix
     }
 
 
@@ -2257,15 +2295,16 @@ packageHashConfigInputs
 -- 'ElaboratedInstallPlan', replace configured source packages by pre-existing
 -- installed packages whenever they exist.
 --
-improveInstallPlanWithPreExistingPackages :: InstalledPackageIndex
-                                          -> ElaboratedInstallPlan
-                                          -> ElaboratedInstallPlan
+improveInstallPlanWithPreExistingPackages
+  :: InstalledPackageIndex -> ElaboratedInstallPlan -> ElaboratedInstallPlan
 improveInstallPlanWithPreExistingPackages installedPkgIndex installPlan =
-    replaceWithPreExisting installPlan
-      [ ipkg
-      | InstallPlan.Configured pkg
-          <- InstallPlan.reverseTopologicalOrder installPlan
-      , ipkg <- maybeToList (canPackageBeImproved pkg) ]
+  replaceWithPreExisting
+    installPlan
+    [ ipkg
+    | InstallPlan.Configured pkg <- InstallPlan.reverseTopologicalOrder
+      installPlan
+    , ipkg                       <- maybeToList (canPackageBeImproved pkg)
+    ]
   where
     --TODO: sanity checks:
     -- * the installed package must have the expected deps etc
@@ -2275,9 +2314,9 @@ improveInstallPlanWithPreExistingPackages installedPkgIndex installPlan =
     -- since overwriting is never safe.
 
     canPackageBeImproved pkg =
-      PackageIndex.lookupUnitId
-        installedPkgIndex (installedPackageId pkg)
+      PackageIndex.lookupUnitId installedPkgIndex (installedPackageId pkg)
 
-    replaceWithPreExisting =
-      foldl' (\plan ipkg -> InstallPlan.preexisting
-                              (installedPackageId ipkg) ipkg plan)
+    replaceWithPreExisting = foldl'
+      ( \plan ipkg ->
+        InstallPlan.preexisting (installedPackageId ipkg) ipkg plan
+      )

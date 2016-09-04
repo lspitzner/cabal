@@ -259,7 +259,7 @@ instance Binary Repo
 
 -- | Check if this is a remote repo
 maybeRepoRemote :: Repo -> Maybe RemoteRepo
-maybeRepoRemote (RepoLocal    _localDir) = Nothing
+maybeRepoRemote (RepoLocal _localDir   ) = Nothing
 maybeRepoRemote (RepoRemote r _localDir) = Just r
 maybeRepoRemote (RepoSecure r _localDir) = Just r
 

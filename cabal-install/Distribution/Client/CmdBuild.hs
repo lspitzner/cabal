@@ -34,22 +34,24 @@ import Control.Monad (unless)
 -- For more details on how this works, see the module
 -- "Distribution.Client.ProjectOrchestration"
 --
-buildAction :: (ConfigFlags, ConfigExFlags, InstallFlags, HaddockFlags)
-            -> [String] -> GlobalFlags -> IO ()
-buildAction (configFlags, configExFlags, installFlags, haddockFlags)
-            targetStrings globalFlags = do
+buildAction
+  :: (ConfigFlags, ConfigExFlags, InstallFlags, HaddockFlags)
+  -> [String]
+  -> GlobalFlags
+  -> IO ()
+buildAction (configFlags, configExFlags, installFlags, haddockFlags) targetStrings globalFlags
+  = do
 
     userTargets <- readUserBuildTargets targetStrings
 
-    buildCtx@ProjectBuildContext{buildSettings, elaboratedPlan} <-
+    buildCtx@ProjectBuildContext { buildSettings, elaboratedPlan } <-
       runProjectPreBuildPhase
         verbosity
-        ( globalFlags, configFlags, configExFlags
-        , installFlags, haddockFlags )
-        PreBuildHooks {
-          hookPrePlanning      = \_ _ _ -> return (),
-          hookSelectPlanSubset = selectBuildTargets userTargets
-        }
+        (globalFlags, configFlags, configExFlags, installFlags, haddockFlags)
+        PreBuildHooks
+          { hookPrePlanning      = \_ _ _ -> return ()
+          , hookSelectPlanSubset = selectBuildTargets userTargets
+          }
 
     printPlan verbosity buildCtx
 
@@ -62,7 +64,5 @@ buildAction (configFlags, configExFlags, installFlags, haddockFlags)
     -- When we interpret the targets on the command line, interpret them as
     -- repl targets (as opposed to say repl or haddock targets).
     selectBuildTargets =
-      selectTargets
-        BuildDefaultComponents
-        BuildSpecificComponent
+      selectTargets BuildDefaultComponents BuildSpecificComponent
 

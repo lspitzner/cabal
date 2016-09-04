@@ -74,21 +74,21 @@ data GlobalFlags = GlobalFlags {
   } deriving Generic
 
 defaultGlobalFlags :: GlobalFlags
-defaultGlobalFlags  = GlobalFlags {
-    globalVersion           = Flag False,
-    globalNumericVersion    = Flag False,
-    globalConfigFile        = mempty,
-    globalSandboxConfigFile = mempty,
-    globalConstraintsFile   = mempty,
-    globalRemoteRepos       = mempty,
-    globalCacheDir          = mempty,
-    globalLocalRepos        = mempty,
-    globalLogsDir           = mempty,
-    globalWorldFile         = mempty,
-    globalRequireSandbox    = Flag False,
-    globalIgnoreSandbox     = Flag False,
-    globalIgnoreExpiry      = Flag False,
-    globalHttpTransport     = mempty
+defaultGlobalFlags = GlobalFlags
+  { globalVersion           = Flag False
+  , globalNumericVersion    = Flag False
+  , globalConfigFile        = mempty
+  , globalSandboxConfigFile = mempty
+  , globalConstraintsFile   = mempty
+  , globalRemoteRepos       = mempty
+  , globalCacheDir          = mempty
+  , globalLocalRepos        = mempty
+  , globalLogsDir           = mempty
+  , globalWorldFile         = mempty
+  , globalRequireSandbox    = Flag False
+  , globalIgnoreSandbox     = Flag False
+  , globalIgnoreExpiry      = Flag False
+  , globalHttpTransport     = mempty
   }
 
 instance Monoid GlobalFlags where
@@ -135,33 +135,35 @@ data RepoContext = RepoContext {
 data SecureRepo = forall down. SecureRepo (Sec.Repository down)
 
 withRepoContext :: Verbosity -> GlobalFlags -> (RepoContext -> IO a) -> IO a
-withRepoContext verbosity globalFlags =
-    withRepoContext'
-      verbosity
-      (fromNubList (globalRemoteRepos   globalFlags))
-      (fromNubList (globalLocalRepos    globalFlags))
-      (fromFlag    (globalCacheDir      globalFlags))
-      (flagToMaybe (globalHttpTransport globalFlags))
-      (flagToMaybe (globalIgnoreExpiry  globalFlags))
+withRepoContext verbosity globalFlags = withRepoContext'
+  verbosity
+  (fromNubList (globalRemoteRepos globalFlags))
+  (fromNubList (globalLocalRepos globalFlags))
+  (fromFlag (globalCacheDir globalFlags))
+  (flagToMaybe (globalHttpTransport globalFlags))
+  (flagToMaybe (globalIgnoreExpiry globalFlags))
 
-withRepoContext' :: Verbosity -> [RemoteRepo] -> [FilePath]
-                 -> FilePath  -> Maybe String -> Maybe Bool
-                 -> (RepoContext -> IO a)
-                 -> IO a
-withRepoContext' verbosity remoteRepos localRepos
-                 sharedCacheDir httpTransport ignoreExpiry = \callback -> do
+withRepoContext'
+  :: Verbosity
+  -> [RemoteRepo]
+  -> [FilePath]
+  -> FilePath
+  -> Maybe String
+  -> Maybe Bool
+  -> (RepoContext -> IO a)
+  -> IO a
+withRepoContext' verbosity remoteRepos localRepos sharedCacheDir httpTransport ignoreExpiry
+  = \callback -> do
     transportRef <- newMVar Nothing
-    let httpLib = Sec.HTTP.transportAdapter
-                    verbosity
-                    (getTransport transportRef)
-    initSecureRepos verbosity httpLib secureRemoteRepos $ \secureRepos' ->
-      callback RepoContext {
-          repoContextRepos          = allRemoteRepos
-                                   ++ map RepoLocal localRepos
-        , repoContextGetTransport   = getTransport transportRef
-        , repoContextWithSecureRepo = withSecureRepo secureRepos'
-        , repoContextIgnoreExpiry   = fromMaybe False ignoreExpiry
-        }
+    let httpLib =
+          Sec.HTTP.transportAdapter verbosity (getTransport transportRef)
+    initSecureRepos verbosity httpLib secureRemoteRepos
+      $ \secureRepos' -> callback RepoContext
+          { repoContextRepos = allRemoteRepos ++ map RepoLocal localRepos
+          , repoContextGetTransport   = getTransport transportRef
+          , repoContextWithSecureRepo = withSecureRepo secureRepos'
+          , repoContextIgnoreExpiry   = fromMaybe False ignoreExpiry
+          }
   where
     secureRemoteRepos =
       [ (remote, cacheDir) | RepoSecure remote cacheDir <- allRemoteRepos ]
@@ -173,17 +175,17 @@ withRepoContext' verbosity remoteRepos localRepos
       ]
 
     getTransport :: MVar (Maybe HttpTransport) -> IO HttpTransport
-    getTransport transportRef =
-      modifyMVar transportRef $ \mTransport -> do
-        transport <- case mTransport of
-          Just tr -> return tr
-          Nothing -> configureTransport verbosity httpTransport
-        return (Just transport, transport)
+    getTransport transportRef = modifyMVar transportRef $ \mTransport -> do
+      transport <- case mTransport of
+        Just tr -> return tr
+        Nothing -> configureTransport verbosity httpTransport
+      return (Just transport, transport)
 
-    withSecureRepo :: Map Repo SecureRepo
-                   -> Repo
-                   -> (forall down. Sec.Repository down -> IO a)
-                   -> IO a
+    withSecureRepo
+      :: Map Repo SecureRepo
+      -> Repo
+      -> (forall down . Sec.Repository down -> IO a)
+      -> IO a
     withSecureRepo secureRepos repo callback =
       case Map.lookup repo secureRepos of
         Just (SecureRepo secureRepo) -> callback secureRepo
@@ -192,19 +194,20 @@ withRepoContext' verbosity remoteRepos localRepos
 -- | Initialize the provided secure repositories
 --
 -- Assumed invariant: `remoteRepoSecure` should be set for all these repos.
-initSecureRepos :: forall a. Verbosity
-                -> Sec.HTTP.HttpLib
-                -> [(RemoteRepo, FilePath)]
-                -> (Map Repo SecureRepo -> IO a)
-                -> IO a
+initSecureRepos
+  :: forall a . Verbosity
+     -> Sec.HTTP.HttpLib
+     -> [(RemoteRepo, FilePath)]
+     -> (Map Repo SecureRepo -> IO a)
+     -> IO a
 initSecureRepos verbosity httpLib repos callback = go Map.empty repos
   where
     go :: Map Repo SecureRepo -> [(RemoteRepo, FilePath)] -> IO a
-    go !acc [] = callback acc
-    go !acc ((r,cacheDir):rs) = do
+    go !acc []                 = callback acc
+    go !acc ((r, cacheDir):rs) = do
       cachePath <- Sec.makeAbsolute $ Sec.fromFilePath cacheDir
-      initSecureRepo verbosity httpLib r cachePath $ \r' ->
-        go (Map.insert (RepoSecure r cacheDir) r' acc) rs
+      initSecureRepo verbosity httpLib r cachePath
+        $ \r' -> go (Map.insert (RepoSecure r cacheDir) r' acc) rs
 
 -- | Initialize the given secure repo
 --
@@ -212,23 +215,24 @@ initSecureRepos verbosity httpLib repos callback = go Map.empty repos
 -- from @cabal-install@'s; these are secure repositories, but live in the local
 -- file system. We use the convention that these repositories are identified by
 -- URLs of the form @file:/path/to/local/repo@.
-initSecureRepo :: Verbosity
-               -> Sec.HTTP.HttpLib
-               -> RemoteRepo  -- ^ Secure repo ('remoteRepoSecure' assumed)
-               -> Sec.Path Sec.Absolute -- ^ Cache dir
-               -> (SecureRepo -> IO a)  -- ^ Callback
-               -> IO a
-initSecureRepo verbosity httpLib RemoteRepo{..} cachePath = \callback -> do
-    withRepo $ \r -> do
-      requiresBootstrap <- Sec.requiresBootstrap r
-      when requiresBootstrap $ Sec.uncheckClientErrors $
-        Sec.bootstrap r
-          (map Sec.KeyId    remoteRepoRootKeys)
-          (Sec.KeyThreshold (fromIntegral remoteRepoKeyThreshold))
-      callback $ SecureRepo r
+initSecureRepo
+  :: Verbosity
+  -> Sec.HTTP.HttpLib
+  -> RemoteRepo  -- ^ Secure repo ('remoteRepoSecure' assumed)
+  -> Sec.Path Sec.Absolute -- ^ Cache dir
+  -> (SecureRepo -> IO a)  -- ^ Callback
+  -> IO a
+initSecureRepo verbosity httpLib RemoteRepo {..} cachePath = \callback -> do
+  withRepo $ \r -> do
+    requiresBootstrap <- Sec.requiresBootstrap r
+    when requiresBootstrap $ Sec.uncheckClientErrors $ Sec.bootstrap
+      r
+      (map Sec.KeyId remoteRepoRootKeys)
+      (Sec.KeyThreshold (fromIntegral remoteRepoKeyThreshold))
+    callback $ SecureRepo r
   where
     -- Initialize local or remote repo depending on the URI
-    withRepo :: (forall down. Sec.Repository down -> IO a) -> IO a
+    withRepo :: (forall down . Sec.Repository down -> IO a) -> IO a
     withRepo callback | uriScheme remoteRepoURI == "file:" = do
       dir <- Sec.makeAbsolute $ Sec.fromFilePath (uriPath remoteRepoURI)
       Sec.Local.withRepository dir
@@ -237,19 +241,18 @@ initSecureRepo verbosity httpLib RemoteRepo{..} cachePath = \callback -> do
                                Sec.hackageIndexLayout
                                logTUF
                                callback
-    withRepo callback =
-      Sec.Remote.withRepository httpLib
-                                [remoteRepoURI]
-                                Sec.Remote.defaultRepoOpts
-                                cache
-                                Sec.hackageRepoLayout
-                                Sec.hackageIndexLayout
-                                logTUF
-                                callback
+    withRepo callback = Sec.Remote.withRepository httpLib
+                                                  [remoteRepoURI]
+                                                  Sec.Remote.defaultRepoOpts
+                                                  cache
+                                                  Sec.hackageRepoLayout
+                                                  Sec.hackageIndexLayout
+                                                  logTUF
+                                                  callback
 
     cache :: Sec.Cache
-    cache = Sec.Cache {
-        cacheRoot   = cachePath
+    cache = Sec.Cache
+      { cacheRoot   = cachePath
       , cacheLayout = Sec.cabalCacheLayout
       }
 

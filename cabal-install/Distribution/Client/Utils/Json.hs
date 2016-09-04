@@ -46,7 +46,7 @@ infixr 8 .=
 
 -- | A key-value pair for encoding a JSON object.
 (.=) :: ToJSON v => String -> v -> Pair
-k .= v  = (k, toJSON v)
+k .= v = (k, toJSON v)
 
 -- | Create a 'Value' from a list of name\/value 'Pair's.
 object :: [Pair] -> Value
@@ -124,25 +124,28 @@ encodeValueBB jv = case jv of
   Bool False -> "false"
   Null       -> "null"
   Number n
-    | isNaN n || isInfinite n   -> encodeValueBB Null
-    | Just i <- doubleToInt64 n -> BB.int64Dec i
-    | otherwise                 -> BB.doubleDec n
-  Array a  -> encodeArrayBB a
+    | isNaN n || isInfinite n
+    -> encodeValueBB Null
+    | Just i <- doubleToInt64 n
+    -> BB.int64Dec i
+    | otherwise
+    -> BB.doubleDec n
+  Array  a -> encodeArrayBB a
   String s -> encodeStringBB s
   Object o -> encodeObjectBB o
 
 encodeArrayBB :: [Value] -> Builder
-encodeArrayBB [] = "[]"
+encodeArrayBB []  = "[]"
 encodeArrayBB jvs = BB.char8 '[' <> go jvs <> BB.char8 ']'
   where
     go = Data.Monoid.mconcat . intersperse (BB.char8 ',') . map encodeValueBB
 
 encodeObjectBB :: Object -> Builder
-encodeObjectBB [] = "{}"
+encodeObjectBB []  = "{}"
 encodeObjectBB jvs = BB.char8 '{' <> go jvs <> BB.char8 '}'
   where
     go = Data.Monoid.mconcat . intersperse (BB.char8 ',') . map encPair
-    encPair (l,x) = encodeStringBB l <> BB.char8 ':' <> encodeValueBB x
+    encPair (l, x) = encodeStringBB l <> BB.char8 ':' <> encodeValueBB x
 
 encodeStringBB :: String -> Builder
 encodeStringBB str = BB.char8 '"' <> go str <> BB.char8 '"'
@@ -158,31 +161,34 @@ encodeToString jv = encodeValue (toJSON jv) []
 
 encodeValue :: Value -> ShowS
 encodeValue jv = case jv of
-  Bool b   -> showString (if b then "true" else "false")
-  Null     -> showString "null"
+  Bool b -> showString (if b then "true" else "false")
+  Null   -> showString "null"
   Number n
-    | isNaN n || isInfinite n    -> encodeValue Null
-    | Just i <- doubleToInt64 n -> shows i
-    | otherwise                 -> shows n
-  Array a -> encodeArray a
+    | isNaN n || isInfinite n
+    -> encodeValue Null
+    | Just i <- doubleToInt64 n
+    -> shows i
+    | otherwise
+    -> shows n
+  Array  a -> encodeArray a
   String s -> encodeString s
   Object o -> encodeObject o
 
 encodeArray :: [Value] -> ShowS
-encodeArray [] = showString "[]"
+encodeArray []  = showString "[]"
 encodeArray jvs = ('[':) . go jvs . (']':)
   where
     go []     = id
-    go [x]    = encodeValue x
+    go [x   ] = encodeValue x
     go (x:xs) = encodeValue x . (',':) . go xs
 
 encodeObject :: Object -> ShowS
-encodeObject [] = showString "{}"
+encodeObject []  = showString "{}"
 encodeObject jvs = ('{':) . go jvs . ('}':)
   where
-    go []          = id
-    go [(l,x)]     = encodeString l . (':':) . encodeValue x
-    go ((l,x):lxs) = encodeString l . (':':) . encodeValue x . (',':) . go lxs
+    go []           = id
+    go [(l, x)    ] = encodeString l . (':':) . encodeValue x
+    go ((l, x):lxs) = encodeString l . (':':) . encodeValue x . (',':) . go lxs
 
 encodeString :: String -> ShowS
 encodeString str = ('"':) . showString (escapeString str) . ('"':)
@@ -197,29 +203,36 @@ doubleToInt64 x
   | fromInteger x' == x
   , x' <= toInteger (maxBound :: Int64)
   , x' >= toInteger (minBound :: Int64)
-    = Just (fromIntegral x')
-  | otherwise = Nothing
+  = Just (fromIntegral x')
+  | otherwise
+  = Nothing
   where
     x' = round x
 
 -- | Minimally escape a 'String' in accordance with RFC 7159, "7. Strings"
 escapeString :: String -> String
 escapeString s
-  | not (any needsEscape s) = s
-  | otherwise               = escape s
+  | not (any needsEscape s)
+  = s
+  | otherwise
+  = escape s
   where
-    escape [] = []
+    escape []     = []
     escape (x:xs) = case x of
-      '\\' -> '\\':'\\':escape xs
-      '"'  -> '\\':'"':escape xs
-      '\b' -> '\\':'b':escape xs
-      '\f' -> '\\':'f':escape xs
-      '\n' -> '\\':'n':escape xs
-      '\r' -> '\\':'r':escape xs
-      '\t' -> '\\':'t':escape xs
-      c | ord c < 0x10 -> '\\':'u':'0':'0':'0':intToDigit (ord c):escape xs
-        | ord c < 0x20 -> '\\':'u':'0':'0':'1':intToDigit (ord c - 0x10):escape xs
-        | otherwise    -> c : escape xs
+      '\\' -> '\\' : '\\' : escape xs
+      '"'  -> '\\' : '"' : escape xs
+      '\b' -> '\\' : 'b' : escape xs
+      '\f' -> '\\' : 'f' : escape xs
+      '\n' -> '\\' : 'n' : escape xs
+      '\r' -> '\\' : 'r' : escape xs
+      '\t' -> '\\' : 't' : escape xs
+      c
+        | ord c < 0x10
+        -> '\\' : 'u' : '0' : '0' : '0' : intToDigit (ord c) : escape xs
+        | ord c < 0x20
+        -> '\\' : 'u' : '0' : '0' : '1' : intToDigit (ord c - 0x10) : escape xs
+        | otherwise
+        -> c : escape xs
 
     -- unescaped = %x20-21 / %x23-5B / %x5D-10FFFF
-    needsEscape c = ord c < 0x20 || c `elem` ['\\','"']
+    needsEscape c = ord c < 0x20 || c `elem` ['\\', '"']

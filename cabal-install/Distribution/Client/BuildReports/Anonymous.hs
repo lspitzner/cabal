@@ -119,21 +119,27 @@ data InstallOutcome
 data Outcome = NotTried | Failed | Ok
   deriving Eq
 
-new :: OS -> Arch -> CompilerId -> PackageIdentifier -> FlagAssignment
-    -> [PackageIdentifier] -> BR.BuildResult -> BuildReport
-new os' arch' comp pkgid flags deps result =
-  BuildReport {
-    package               = pkgid,
-    os                    = os',
-    arch                  = arch',
-    compiler              = comp,
-    client                = cabalInstallID,
-    flagAssignment        = flags,
-    dependencies          = deps,
-    installOutcome        = convertInstallOutcome,
+new
+  :: OS
+  -> Arch
+  -> CompilerId
+  -> PackageIdentifier
+  -> FlagAssignment
+  -> [PackageIdentifier]
+  -> BR.BuildResult
+  -> BuildReport
+new os' arch' comp pkgid flags deps result = BuildReport
+  { package        = pkgid
+  , os             = os'
+  , arch           = arch'
+  , compiler       = comp
+  , client         = cabalInstallID
+  , flagAssignment = flags
+  , dependencies   = deps
+  , installOutcome = convertInstallOutcome
 --    cabalVersion          = undefined
-    docsOutcome           = convertDocsOutcome,
-    testsOutcome          = convertTestsOutcome
+  , docsOutcome    = convertDocsOutcome
+  , testsOutcome   = convertTestsOutcome
   }
   where
     convertInstallOutcome = case result of
@@ -145,17 +151,17 @@ new os' arch' comp pkgid flags deps result =
       Left  (BR.BuildFailed     _) -> BuildFailed
       Left  (BR.TestsFailed     _) -> TestsFailed
       Left  (BR.InstallFailed   _) -> InstallFailed
-      Right (BR.BuildOk       _ _ _) -> InstallOk
-    convertDocsOutcome = case result of
-      Left _                                -> NotTried
-      Right (BR.BuildOk BR.DocsNotTried _ _)  -> NotTried
-      Right (BR.BuildOk BR.DocsFailed _ _)    -> Failed
-      Right (BR.BuildOk BR.DocsOk _ _)        -> Ok
-    convertTestsOutcome = case result of
-      Left  (BR.TestsFailed _)              -> Failed
-      Left _                                -> NotTried
+      Right (BR.BuildOk _ _ _    ) -> InstallOk
+    convertDocsOutcome    = case result of
+      Left  _                                -> NotTried
+      Right (BR.BuildOk BR.DocsNotTried _ _) -> NotTried
+      Right (BR.BuildOk BR.DocsFailed   _ _) -> Failed
+      Right (BR.BuildOk BR.DocsOk       _ _) -> Ok
+    convertTestsOutcome   = case result of
+      Left  (BR.TestsFailed _)                -> Failed
+      Left  _                                 -> NotTried
       Right (BR.BuildOk _ BR.TestsNotTried _) -> NotTried
-      Right (BR.BuildOk _ BR.TestsOk _)       -> Ok
+      Right (BR.BuildOk _ BR.TestsOk       _) -> Ok
 
 cabalInstallID :: PackageIdentifier
 cabalInstallID =
@@ -166,19 +172,19 @@ cabalInstallID =
 -- ------------------------------------------------------------
 
 initialBuildReport :: BuildReport
-initialBuildReport = BuildReport {
-    package         = requiredField "package",
-    os              = requiredField "os",
-    arch            = requiredField "arch",
-    compiler        = requiredField "compiler",
-    client          = requiredField "client",
-    flagAssignment  = [],
-    dependencies    = [],
-    installOutcome  = requiredField "install-outcome",
+initialBuildReport = BuildReport
+  { package        = requiredField "package"
+  , os             = requiredField "os"
+  , arch           = requiredField "arch"
+  , compiler       = requiredField "compiler"
+  , client         = requiredField "client"
+  , flagAssignment = []
+  , dependencies   = []
+  , installOutcome = requiredField "install-outcome"
 --    cabalVersion  = Nothing,
 --    tools         = [],
-    docsOutcome     = NotTried,
-    testsOutcome    = NotTried
+  , docsOutcome    = NotTried
+  , testsOutcome   = NotTried
   }
   where
     requiredField fname = error ("required field: " ++ fname)
@@ -188,43 +194,39 @@ initialBuildReport = BuildReport {
 
 parse :: String -> Either String BuildReport
 parse s = case parseFields s of
-  ParseFailed perror -> Left  msg where (_, msg) = locatedErrorMsg perror
-  ParseOk   _ report -> Right report
+  ParseFailed perror -> Left msg where (_, msg) = locatedErrorMsg perror
+  ParseOk _ report   -> Right report
 
 parseFields :: String -> ParseResult BuildReport
 parseFields input = do
   fields <- mapM extractField =<< readFields input
-  let merged = mergeBy (\desc (_,name,_) -> compare (fieldName desc) name)
+  let merged = mergeBy (\desc (_, name, _) -> compare (fieldName desc) name)
                        sortedFieldDescrs
-                       (sortBy (comparing (\(_,name,_) -> name)) fields)
+                       (sortBy (comparing (\(_, name, _) -> name)) fields)
   checkMerged initialBuildReport merged
-
   where
     extractField :: Field -> ParseResult (Int, String, String)
-    extractField (F line name value)  = return (line, name, value)
+    extractField (F line name value ) = return (line, name, value)
     extractField (Section line _ _ _) = syntaxError line "Unrecognized stanza"
     extractField (IfBlock line _ _ _) = syntaxError line "Unrecognized stanza"
 
-    checkMerged report [] = return report
+    checkMerged report []                 = return report
     checkMerged report (merged:remaining) = case merged of
       InBoth fieldDescr (line, _name, value) -> do
         report' <- fieldSet fieldDescr line value report
         checkMerged report' remaining
       OnlyInRight (line, name, _) ->
         syntaxError line ("Unrecognized field " ++ name)
-      OnlyInLeft  fieldDescr ->
-        fail ("Missing field " ++ fieldName fieldDescr)
+      OnlyInLeft fieldDescr -> fail ("Missing field " ++ fieldName fieldDescr)
 
 parseList :: String -> [BuildReport]
-parseList str =
-  [ report | Right report <- map parse (split str) ]
-
+parseList str = [ report | Right report <- map parse (split str) ]
   where
     split :: String -> [String]
     split = filter (not . null) . unfoldr chunk . lines
     chunk [] = Nothing
     chunk ls = case break null ls of
-                 (r, rs) -> Just (unlines r, dropWhile null rs)
+      (r, rs) -> Just (unlines r, dropWhile null rs)
 
 -- -----------------------------------------------------------------------------
 -- Pretty-printing
@@ -237,33 +239,51 @@ show = Disp.render . ppFields fieldDescrs
 
 fieldDescrs :: [FieldDescr BuildReport]
 fieldDescrs =
- [ simpleField "package"         Text.disp      Text.parse
-                                 package        (\v r -> r { package = v })
- , simpleField "os"              Text.disp      Text.parse
-                                 os             (\v r -> r { os = v })
- , simpleField "arch"            Text.disp      Text.parse
-                                 arch           (\v r -> r { arch = v })
- , simpleField "compiler"        Text.disp      Text.parse
-                                 compiler       (\v r -> r { compiler = v })
- , simpleField "client"          Text.disp      Text.parse
-                                 client         (\v r -> r { client = v })
- , listField   "flags"           dispFlag       parseFlag
-                                 flagAssignment (\v r -> r { flagAssignment = v })
- , listField   "dependencies"    Text.disp      Text.parse
-                                 dependencies   (\v r -> r { dependencies = v })
- , simpleField "install-outcome" Text.disp      Text.parse
-                                 installOutcome (\v r -> r { installOutcome = v })
- , simpleField "docs-outcome"    Text.disp      Text.parse
-                                 docsOutcome    (\v r -> r { docsOutcome = v })
- , simpleField "tests-outcome"   Text.disp      Text.parse
-                                 testsOutcome   (\v r -> r { testsOutcome = v })
- ]
+  [ simpleField "package"
+                Text.disp
+                Text.parse
+                package
+                (\v r -> r { package = v })
+  , simpleField "os"   Text.disp Text.parse os   (\v r -> r { os = v })
+  , simpleField "arch" Text.disp Text.parse arch (\v r -> r { arch = v })
+  , simpleField "compiler"
+                Text.disp
+                Text.parse
+                compiler
+                (\v r -> r { compiler = v })
+  , simpleField "client" Text.disp Text.parse client (\v r -> r { client = v })
+  , listField "flags"
+              dispFlag
+              parseFlag
+              flagAssignment
+              (\v r -> r { flagAssignment = v })
+  , listField "dependencies"
+              Text.disp
+              Text.parse
+              dependencies
+              (\v r -> r { dependencies = v })
+  , simpleField "install-outcome"
+                Text.disp
+                Text.parse
+                installOutcome
+                (\v r -> r { installOutcome = v })
+  , simpleField "docs-outcome"
+                Text.disp
+                Text.parse
+                docsOutcome
+                (\v r -> r { docsOutcome = v })
+  , simpleField "tests-outcome"
+                Text.disp
+                Text.parse
+                testsOutcome
+                (\v r -> r { testsOutcome = v })
+  ]
 
 sortedFieldDescrs :: [FieldDescr BuildReport]
 sortedFieldDescrs = sortBy (comparing fieldName) fieldDescrs
 
 dispFlag :: (FlagName, Bool) -> Disp.Doc
-dispFlag (FlagName name, True)  =                  Disp.text name
+dispFlag (FlagName name, True ) = Disp.text name
 dispFlag (FlagName name, False) = Disp.char '-' <> Disp.text name
 
 parseFlag :: Parse.ReadP r (FlagName, Bool)

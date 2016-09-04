@@ -128,16 +128,10 @@ data ProjectBuildContext = ProjectBuildContext {
 
 -- | Pre-build phase: decide what to do.
 --
-runProjectPreBuildPhase :: Verbosity
-                        -> CliConfigFlags
-                        -> PreBuildHooks
-                        -> IO ProjectBuildContext
 runProjectPreBuildPhase
-    verbosity
-    ( globalFlags
-    , configFlags, configExFlags
-    , installFlags, haddockFlags )
-    PreBuildHooks{..} = do
+  :: Verbosity -> CliConfigFlags -> PreBuildHooks -> IO ProjectBuildContext
+runProjectPreBuildPhase verbosity (globalFlags, configFlags, configExFlags, installFlags, haddockFlags) PreBuildHooks {..}
+  = do
 
     cabalDir <- defaultCabalDir
     let cabalDirLayout = defaultCabalDirLayout cabalDir
@@ -145,51 +139,53 @@ runProjectPreBuildPhase
     projectRootDir <- findProjectRoot
     let distDirLayout = defaultDistDirLayout projectRootDir
 
-    let cliConfig = commandLineFlagsToProjectConfig
-                      globalFlags configFlags configExFlags
-                      installFlags haddockFlags
+    let cliConfig = commandLineFlagsToProjectConfig globalFlags
+                                                    configFlags
+                                                    configExFlags
+                                                    installFlags
+                                                    haddockFlags
 
-    hookPrePlanning
-      projectRootDir
-      distDirLayout
-      cliConfig
+    hookPrePlanning projectRootDir distDirLayout cliConfig
 
     -- Take the project configuration and make a plan for how to build
     -- everything in the project. This is independent of any specific targets
     -- the user has asked for.
     --
-    (elaboratedPlan, _, elaboratedShared, projectConfig) <-
-      rebuildInstallPlan verbosity
-                         projectRootDir distDirLayout cabalDirLayout
-                         cliConfig
+    (elaboratedPlan, _, elaboratedShared, projectConfig) <- rebuildInstallPlan
+      verbosity
+      projectRootDir
+      distDirLayout
+      cabalDirLayout
+      cliConfig
 
     let buildSettings = resolveBuildTimeSettings
-                          verbosity cabalDirLayout
-                          (projectConfigShared    projectConfig)
-                          (projectConfigBuildOnly projectConfig)
-                          (projectConfigBuildOnly cliConfig)
+          verbosity
+          cabalDirLayout
+          (projectConfigShared projectConfig)
+          (projectConfigBuildOnly projectConfig)
+          (projectConfigBuildOnly cliConfig)
 
     -- The plan for what to do is represented by an 'ElaboratedInstallPlan'
 
     -- Now given the specific targets the user has asked for, decide
     -- which bits of the plan we will want to execute.
     --
-    elaboratedPlan' <- hookSelectPlanSubset elaboratedPlan
+    elaboratedPlan'                     <- hookSelectPlanSubset elaboratedPlan
 
     -- Check if any packages don't need rebuilding, and improve the plan.
     -- This also gives us more accurate reasons for the --dry-run output.
     --
-    (elaboratedPlan'', pkgsBuildStatus) <-
-      rebuildTargetsDryRun distDirLayout
-                           elaboratedPlan'
+    (elaboratedPlan'', pkgsBuildStatus) <- rebuildTargetsDryRun
+      distDirLayout
+      elaboratedPlan'
 
-    return ProjectBuildContext {
-      distDirLayout,
-      elaboratedPlan = elaboratedPlan'',
-      elaboratedShared,
-      pkgsBuildStatus,
-      buildSettings
-    }
+    return ProjectBuildContext
+      { distDirLayout
+      , elaboratedPlan   = elaboratedPlan''
+      , elaboratedShared
+      , pkgsBuildStatus
+      , buildSettings
+      }
 
 
 -- | Build phase: now do it.
@@ -197,24 +193,21 @@ runProjectPreBuildPhase
 -- Execute all or parts of the description of what to do to build or
 -- rebuild the various packages needed.
 --
-runProjectBuildPhase :: Verbosity
-                     -> ProjectBuildContext
-                     -> IO BuildResults
+runProjectBuildPhase :: Verbosity -> ProjectBuildContext -> IO BuildResults
 runProjectBuildPhase verbosity ProjectBuildContext {..} =
-    fmap (Map.union (previousBuildResults pkgsBuildStatus)) $
-    rebuildTargets verbosity
-                   distDirLayout
-                   elaboratedPlan
-                   elaboratedShared
-                   pkgsBuildStatus
-                   buildSettings
+  fmap (Map.union (previousBuildResults pkgsBuildStatus)) $ rebuildTargets
+    verbosity
+    distDirLayout
+    elaboratedPlan
+    elaboratedShared
+    pkgsBuildStatus
+    buildSettings
   where
     previousBuildResults :: BuildStatusMap -> BuildResults
-    previousBuildResults =
-      Map.mapMaybe $ \status -> case status of
-        BuildStatusUpToDate buildSuccess -> Just (Right buildSuccess)
-        --TODO: [nice to have] record build failures persistently
-        _                                  -> Nothing
+    previousBuildResults = Map.mapMaybe $ \status -> case status of
+      BuildStatusUpToDate buildSuccess -> Just (Right buildSuccess)
+      --TODO: [nice to have] record build failures persistently
+      _                                -> Nothing
 
     -- Note that it is a deliberate design choice that the 'buildTargets' is
     -- not passed to phase 1, and the various bits of input config is not
@@ -242,18 +235,19 @@ runProjectBuildPhase verbosity ProjectBuildContext {..} =
 --
 -- How to get the 'PackageTarget's from the 'UserBuildTarget' is customisable.
 --
-selectTargets :: PackageTarget
-              -> (ComponentTarget -> PackageTarget)
-              -> [UserBuildTarget]
-              -> ElaboratedInstallPlan
-              -> IO ElaboratedInstallPlan
-selectTargets targetDefaultComponents targetSpecificComponent
-              userBuildTargets installPlan = do
+selectTargets
+  :: PackageTarget
+  -> (ComponentTarget -> PackageTarget)
+  -> [UserBuildTarget]
+  -> ElaboratedInstallPlan
+  -> IO ElaboratedInstallPlan
+selectTargets targetDefaultComponents targetSpecificComponent userBuildTargets installPlan
+  = do
 
     -- Match the user targets against the available targets. If no targets are
     -- given this uses the package in the current directory, if any.
     --
-    buildTargets <- resolveUserBuildTargets localPackages userBuildTargets
+    buildTargets  <- resolveUserBuildTargets localPackages userBuildTargets
     --TODO: [required eventually] report something if there are no targets
 
     --TODO: [required eventually]
@@ -268,12 +262,12 @@ selectTargets targetDefaultComponents targetSpecificComponent
     -- project, but for now we just bail. This gives us back the ipkgid from
     -- the plan.
     --
-    buildTargets' <- either reportBuildTargetProblems return
-                   $ resolveAndCheckTargets
-                       targetDefaultComponents
-                       targetSpecificComponent
-                       installPlan
-                       buildTargets
+    buildTargets' <-
+      either reportBuildTargetProblems return $ resolveAndCheckTargets
+        targetDefaultComponents
+        targetSpecificComponent
+        installPlan
+        buildTargets
 
     -- Finally, prune the install plan to cover just those target packages
     -- and their deps.
@@ -282,77 +276,76 @@ selectTargets targetDefaultComponents targetSpecificComponent
   where
     localPackages =
       [ (pkgDescription pkg, pkgSourceLocation pkg)
-      | InstallPlan.Configured pkg <- InstallPlan.toList installPlan ]
+      | InstallPlan.Configured pkg <- InstallPlan.toList installPlan
+      ]
       --TODO: [code cleanup] is there a better way to identify local packages?
 
 
 
-resolveAndCheckTargets :: PackageTarget
-                       -> (ComponentTarget -> PackageTarget)
-                       -> ElaboratedInstallPlan
-                       -> [BuildTarget PackageName]
-                       -> Either [BuildTargetProblem]
-                                 (Map InstalledPackageId [PackageTarget])
-resolveAndCheckTargets targetDefaultComponents
-                       targetSpecificComponent
-                       installPlan targets =
-    case partitionEithers (map checkTarget targets) of
-      ([], targets') -> Right $ Map.fromListWith (++)
-                                  [ (ipkgid, [t]) | (ipkgid, t) <- targets' ]
-      (problems, _)  -> Left problems
+resolveAndCheckTargets
+  :: PackageTarget
+  -> (ComponentTarget -> PackageTarget)
+  -> ElaboratedInstallPlan
+  -> [BuildTarget PackageName]
+  -> Either
+       [BuildTargetProblem]
+       (Map InstalledPackageId [PackageTarget])
+resolveAndCheckTargets targetDefaultComponents targetSpecificComponent installPlan targets
+  = case partitionEithers (map checkTarget targets) of
+    ([], targets') ->
+      Right $ Map.fromListWith (++) [ (ipkgid, [t]) | (ipkgid, t) <- targets' ]
+    (problems, _) -> Left problems
   where
     -- TODO [required eventually] currently all build targets refer to packages
     -- inside the project. Ultimately this has to be generalised to allow
     -- referring to other packages and targets.
 
     -- We can ask to build any whole package, project-local or a dependency
-    checkTarget (BuildTargetPackage pn)
-      | Just ipkgid <- Map.lookup pn projAllPkgs
-      = Right (ipkgid, targetDefaultComponents)
+    checkTarget (BuildTargetPackage pn) | Just ipkgid <- Map.lookup
+      pn
+      projAllPkgs = Right (ipkgid, targetDefaultComponents)
 
     -- But if we ask to build an individual component, then that component
     -- had better be in a package that is local to the project.
     -- TODO: and if it's an optional stanza, then that stanza must be available
     checkTarget t@(BuildTargetComponent pn cn)
       | Just ipkgid <- Map.lookup pn projLocalPkgs
-      = Right (ipkgid, targetSpecificComponent
-                         (ComponentTarget cn WholeComponent))
-
+      = Right
+        (ipkgid, targetSpecificComponent (ComponentTarget cn WholeComponent))
       | Map.member pn projAllPkgs
       = Left (BuildTargetComponentNotProjectLocal t)
 
     checkTarget t@(BuildTargetModule pn cn mn)
       | Just ipkgid <- Map.lookup pn projLocalPkgs
-      = Right (ipkgid, BuildSpecificComponent (ComponentTarget cn (ModuleTarget mn)))
-
+      = Right
+        (ipkgid, BuildSpecificComponent (ComponentTarget cn (ModuleTarget mn)))
       | Map.member pn projAllPkgs
       = Left (BuildTargetComponentNotProjectLocal t)
 
-    checkTarget t@(BuildTargetFile pn cn fn)
+    checkTarget t@(BuildTargetFile   pn cn fn)
       | Just ipkgid <- Map.lookup pn projLocalPkgs
-      = Right (ipkgid, BuildSpecificComponent (ComponentTarget cn (FileTarget fn)))
-
+      = Right
+        (ipkgid, BuildSpecificComponent (ComponentTarget cn (FileTarget fn)))
       | Map.member pn projAllPkgs
       = Left (BuildTargetComponentNotProjectLocal t)
 
-    checkTarget t
-      = Left (BuildTargetNotInProject (buildTargetPackage t))
+    checkTarget t = Left (BuildTargetNotInProject (buildTargetPackage t))
 
 
     projAllPkgs, projLocalPkgs :: Map PackageName InstalledPackageId
-    projAllPkgs =
-      Map.fromList
-        [ (packageName pkg, installedPackageId pkg)
-        | pkg <- InstallPlan.toList installPlan ]
+    projAllPkgs   = Map.fromList
+      [ (packageName pkg, installedPackageId pkg)
+      | pkg <- InstallPlan.toList installPlan
+      ]
 
-    projLocalPkgs =
-      Map.fromList
-        [ (packageName pkg, installedPackageId pkg)
-        | InstallPlan.Configured pkg <- InstallPlan.toList installPlan
-        , case pkgSourceLocation pkg of
-            LocalUnpackedPackage _ -> True; _ -> False
+    projLocalPkgs = Map.fromList
+      [ (packageName pkg, installedPackageId pkg)
+      | InstallPlan.Configured pkg <- InstallPlan.toList installPlan
+      , case pkgSourceLocation pkg of
+        LocalUnpackedPackage _ -> True
+        _                      -> False
+      ]
           --TODO: [code cleanup] is there a better way to identify local packages?
-        ]
 
     --TODO: [research required] what if the solution has multiple versions of this package?
     --      e.g. due to setup deps or due to multiple independent sets of
@@ -370,13 +363,17 @@ reportBuildTargetProblems = die . unlines . map reportBuildTargetProblem
 
 reportBuildTargetProblem :: BuildTargetProblem -> String
 reportBuildTargetProblem (BuildTargetNotInProject pn) =
-        "Cannot build the package " ++ display pn ++ ", it is not in this project."
-     ++ "(either directly or indirectly). If you want to add it to the "
-     ++ "project then edit the cabal.project file."
+  "Cannot build the package "
+    ++ display pn
+    ++ ", it is not in this project."
+    ++ "(either directly or indirectly). If you want to add it to the "
+    ++ "project then edit the cabal.project file."
 
 reportBuildTargetProblem (BuildTargetComponentNotProjectLocal t) =
-        "The package " ++ display (buildTargetPackage t) ++ " is in the "
-     ++ "project but it is not a locally unpacked package, so  "
+  "The package "
+    ++ display (buildTargetPackage t)
+    ++ " is in the "
+    ++ "project but it is not a locally unpacked package, so  "
 
 reportBuildTargetProblem (BuildTargetOptionalStanzaDisabled _) = undefined
 
@@ -389,116 +386,110 @@ reportBuildTargetProblem (BuildTargetOptionalStanzaDisabled _) = undefined
 -- will be built.
 --
 printPlan :: Verbosity -> ProjectBuildContext -> IO ()
-printPlan verbosity
-          ProjectBuildContext {
-            elaboratedPlan,
-            pkgsBuildStatus,
-            buildSettings = BuildTimeSettings{buildSettingDryRun}
-          }
-
+printPlan verbosity ProjectBuildContext { elaboratedPlan, pkgsBuildStatus, buildSettings = BuildTimeSettings { buildSettingDryRun } }
   | null pkgs
   = notice verbosity "Up to date"
-
   | verbosity >= verbose
-  = notice verbosity $ unlines $
-      ("In order, the following " ++ wouldWill ++ " be built:")
-    : map showPkgAndReason pkgs
-
+  = notice verbosity
+  $ unlines
+  $ ("In order, the following " ++ wouldWill ++ " be built:")
+  : map showPkgAndReason pkgs
   | otherwise
-  = notice verbosity $ unlines $
-      ("In order, the following " ++ wouldWill
-       ++ " be built (use -v for more details):")
-    : map showPkg pkgs
+  = notice verbosity
+  $ unlines
+  $ (  "In order, the following "
+    ++ wouldWill
+    ++ " be built (use -v for more details):"
+    )
+  : map showPkg pkgs
   where
     pkgs = InstallPlan.executionOrder elaboratedPlan
 
-    wouldWill | buildSettingDryRun = "would"
-              | otherwise          = "will"
+    wouldWill
+      | buildSettingDryRun
+      = "would"
+      | otherwise
+      = "will"
 
     showPkg pkg = display (packageId pkg)
 
     showPkgAndReason :: ElaboratedReadyPackage -> String
     showPkgAndReason (ReadyPackage pkg) =
-      display (packageId pkg) ++
-      showTargets pkg ++
-      showFlagAssignment (nonDefaultFlags pkg) ++
-      showStanzas pkg ++
-      let buildStatus = pkgsBuildStatus Map.! installedPackageId pkg in
-      " (" ++ showBuildStatus buildStatus ++ ")"
+      display (packageId pkg)
+        ++ showTargets pkg
+        ++ showFlagAssignment (nonDefaultFlags pkg)
+        ++ showStanzas pkg
+        ++ let buildStatus = pkgsBuildStatus Map.! installedPackageId pkg
+           in  " (" ++ showBuildStatus buildStatus ++ ")"
 
     nonDefaultFlags :: ElaboratedConfiguredPackage -> FlagAssignment
     nonDefaultFlags pkg = pkgFlagAssignment pkg \\ pkgFlagDefaults pkg
 
-    showStanzas pkg = concat
-                    $ [ " *test"
-                      | TestStanzas  `Set.member` pkgStanzasEnabled pkg ]
-                   ++ [ " *bench"
-                      | BenchStanzas `Set.member` pkgStanzasEnabled pkg ]
+    showStanzas pkg =
+      concat
+        $  [ " *test" | TestStanzas `Set.member` pkgStanzasEnabled pkg ]
+        ++ [ " *bench" | BenchStanzas `Set.member` pkgStanzasEnabled pkg ]
 
     showTargets pkg
-      | null (pkgBuildTargets pkg) = ""
+      | null (pkgBuildTargets pkg)
+      = ""
       | otherwise
-      = " (" ++ unwords [ showComponentTarget pkg t | t <- pkgBuildTargets pkg ]
-             ++ ")"
+      =  " ("
+      ++ unwords [ showComponentTarget pkg t | t <- pkgBuildTargets pkg ]
+      ++ ")"
 
     -- TODO: [code cleanup] this should be a proper function in a proper place
     showFlagAssignment :: FlagAssignment -> String
-    showFlagAssignment = concatMap ((' ' :) . showFlagValue)
-    showFlagValue (f, True)   = '+' : showFlagName f
-    showFlagValue (f, False)  = '-' : showFlagName f
+    showFlagAssignment = concatMap ((' ':) . showFlagValue)
+    showFlagValue (f, True ) = '+' : showFlagName f
+    showFlagValue (f, False) = '-' : showFlagName f
     showFlagName (PD.FlagName f) = f
 
     showBuildStatus status = case status of
-      BuildStatusPreExisting -> "already installed"
-      BuildStatusDownload {} -> "requires download & build"
-      BuildStatusUnpack   {} -> "requires build"
+      BuildStatusPreExisting       -> "already installed"
+      BuildStatusDownload{}        -> "requires download & build"
+      BuildStatusUnpack{}          -> "requires build"
       BuildStatusRebuild _ rebuild -> case rebuild of
-        BuildStatusConfigure
-          (MonitoredValueChanged _)   -> "configuration changed"
-        BuildStatusConfigure mreason  -> showMonitorChangedReason mreason
+        BuildStatusConfigure (MonitoredValueChanged _) ->
+          "configuration changed"
+        BuildStatusConfigure mreason   -> showMonitorChangedReason mreason
         BuildStatusBuild _ buildreason -> case buildreason of
-          BuildReasonDepsRebuilt      -> "dependency rebuilt"
-          BuildReasonFilesChanged
-            (MonitoredFileChanged _)  -> "files changed"
-          BuildReasonFilesChanged
-            mreason                   -> showMonitorChangedReason mreason
-          BuildReasonExtraTargets _   -> "additional components to build"
+          BuildReasonDepsRebuilt -> "dependency rebuilt"
+          BuildReasonFilesChanged (MonitoredFileChanged _) -> "files changed"
+          BuildReasonFilesChanged mreason -> showMonitorChangedReason mreason
+          BuildReasonExtraTargets _ -> "additional components to build"
           BuildReasonEphemeralTargets -> "ephemeral targets"
-      BuildStatusUpToDate {} -> "up to date" -- doesn't happen
+      BuildStatusUpToDate{}        -> "up to date" -- doesn't happen
 
-    showMonitorChangedReason (MonitoredFileChanged file) = "file " ++ file
-    showMonitorChangedReason (MonitoredValueChanged _)   = "value changed"
-    showMonitorChangedReason  MonitorFirstRun     = "first run"
-    showMonitorChangedReason  MonitorCorruptCache = "cannot read state cache"
+    showMonitorChangedReason (MonitoredFileChanged  file) = "file " ++ file
+    showMonitorChangedReason (MonitoredValueChanged _   ) = "value changed"
+    showMonitorChangedReason MonitorFirstRun              = "first run"
+    showMonitorChangedReason MonitorCorruptCache = "cannot read state cache"
 
 
 reportBuildFailures :: ElaboratedInstallPlan -> BuildResults -> IO ()
 reportBuildFailures plan buildResults
   | null failures
   = return ()
-
   | isSimpleCase
   = exitFailure
-
   | otherwise
   = case failuresPrimary of
-     [(pkg, reason)] -> die $ renderFailure pkg reason
-     multiple        -> die $ "multiple failures:\n"
-                           ++ unlines
-                                [ renderFailure pkg reason
-                                | (pkg, reason) <- multiple ]
+    [(pkg, reason)] -> die $ renderFailure pkg reason
+    multiple        -> die $ "multiple failures:\n" ++ unlines
+      [ renderFailure pkg reason | (pkg, reason) <- multiple ]
   where
-    failures =  [ (pkgid, reason)
-                | (pkgid, Left reason) <- Map.toList buildResults ]
+    failures =
+      [ (pkgid, reason) | (pkgid, Left reason) <- Map.toList buildResults ]
 
     failuresPrimary =
       [ (pkg, reason)
       | (pkgid, reason) <- failures
       , case reason of
-          DependentFailed {} -> False
-          _                  -> True
-      , InstallPlan.Configured pkg <-
-           maybeToList (InstallPlan.lookup plan pkgid)
+        DependentFailed{} -> False
+        _                 -> True
+      , InstallPlan.Configured pkg <- maybeToList
+        (InstallPlan.lookup plan pkgid)
       ]
 
     -- Special case: we don't want to report anything complicated in the case
@@ -514,67 +505,78 @@ reportBuildFailures plan buildResults
     --
     isSimpleCase
       | [(pkgid, reason)] <- failures
-      , [pkg]             <- rootpkgs
+      , [pkg] <- rootpkgs
       , installedUnitId pkg == pkgid
       , isFailureSelfExplanatory reason
       = True
       | otherwise
       = False
 
-    isFailureSelfExplanatory (BuildFailed e)
-      | Just (ExitFailure _) <- fromException e = True
+    isFailureSelfExplanatory (BuildFailed     e)
+      | Just (ExitFailure _) <- fromException e
+      = True
 
     isFailureSelfExplanatory (ConfigureFailed e)
-      | Just (ExitFailure _) <- fromException e = True
+      | Just (ExitFailure _) <- fromException e
+      = True
 
-    isFailureSelfExplanatory _                  = False
+    isFailureSelfExplanatory _ = False
 
     rootpkgs =
       [ pkg
       | InstallPlan.Configured pkg <- InstallPlan.toList plan
-      , hasNoDependents pkg ]
+      , hasNoDependents pkg
+      ]
 
-    ultimateDeps pkgid =
-        filter (\pkg -> hasNoDependents pkg && installedUnitId pkg /= pkgid)
-               (InstallPlan.reverseDependencyClosure plan [pkgid])
+    ultimateDeps pkgid = filter
+      (\pkg -> hasNoDependents pkg && installedUnitId pkg /= pkgid)
+      (InstallPlan.reverseDependencyClosure plan [pkgid])
 
     hasNoDependents :: HasUnitId pkg => pkg -> Bool
     hasNoDependents = null . InstallPlan.revDirectDeps plan . installedUnitId
 
-    renderFailure pkg reason =
-        case reason of
-          DownloadFailed  e -> "failed to download " ++ pkgstr ++ "."
-                            ++ showException e
-          UnpackFailed    e -> "failed to unpack " ++ pkgstr ++ "."
-                            ++ showException e
-          ConfigureFailed e -> "failed to build " ++ pkgstr ++ ". The failure"
-                            ++ "occurred during the configure step."
-                            ++ showException e
-          BuildFailed     e -> "failed to build " ++ pkgstr ++ "."
-                            ++ showException e
-          TestsFailed     e -> "tests failed for " ++ pkgstr ++ "."
-                            ++ showException e
-          InstallFailed   e -> "failed to build " ++ pkgstr ++ ". The failure"
-                            ++ "occurred during the final install step."
-                            ++ showException e
+    renderFailure pkg reason = case reason of
+      DownloadFailed e ->
+        "failed to download " ++ pkgstr ++ "." ++ showException e
+      UnpackFailed e -> "failed to unpack " ++ pkgstr ++ "." ++ showException e
+      ConfigureFailed e ->
+        "failed to build "
+          ++ pkgstr
+          ++ ". The failure"
+          ++ "occurred during the configure step."
+          ++ showException e
+      BuildFailed e -> "failed to build " ++ pkgstr ++ "." ++ showException e
+      TestsFailed e -> "tests failed for " ++ pkgstr ++ "." ++ showException e
+      InstallFailed e ->
+        "failed to build "
+          ++ pkgstr
+          ++ ". The failure"
+          ++ "occurred during the final install step."
+          ++ showException e
 
-          -- This will never happen, but we include it for completeness
-          DependentFailed pkgid -> " depends on " ++ display pkgid
-                                ++ " which failed to install."
-          PlanningFailed -> " failed during the planning phase."
+      -- This will never happen, but we include it for completeness
+      DependentFailed pkgid ->
+        " depends on " ++ display pkgid ++ " which failed to install."
+      PlanningFailed -> " failed during the planning phase."
       where
-        pkgstr = display (packageId pkg)
-              ++ renderDependencyOf (installedUnitId pkg)
+        pkgstr =
+          display (packageId pkg) ++ renderDependencyOf (installedUnitId pkg)
 
-    renderDependencyOf pkgid =
-      case ultimateDeps pkgid of
-        []         -> ""
-        (p1:[])    -> " (which is required by " ++ display (packageName p1) ++ ")"
-        (p1:p2:[]) -> " (which is required by " ++ display (packageName p1)
-                                     ++ " and " ++ display (packageName p2) ++ ")"
-        (p1:p2:_)  -> " (which is required by " ++ display (packageName p1)
-                                        ++ ", " ++ display (packageName p2)
-                                        ++ " and others)"
+    renderDependencyOf pkgid = case ultimateDeps pkgid of
+      []      -> ""
+      (p1:[]) -> " (which is required by " ++ display (packageName p1) ++ ")"
+      (p1:p2:[]) ->
+        " (which is required by "
+          ++ display (packageName p1)
+          ++ " and "
+          ++ display (packageName p2)
+          ++ ")"
+      (p1:p2:_) ->
+        " (which is required by "
+          ++ display (packageName p1)
+          ++ ", "
+          ++ display (packageName p2)
+          ++ " and others)"
 
     showException e = case fromException e of
       Just (ExitFailure 1) -> ""
@@ -582,24 +584,26 @@ reportBuildFailures plan buildResults
 
 #ifdef MIN_VERSION_unix
       Just (ExitFailure n)
-        | -n == fromIntegral sigKILL ->
-            " The build process was killed (i.e. SIGKILL). " ++ explanation
-
-        |  n == fromIntegral sigKILL ->
-            " The build process terminated with exit code " ++ show n
-         ++ " which may be because some part of it was killed "
-         ++ "(i.e. SIGKILL). " ++ explanation
-        where
-          explanation = "The typical reason for this is that there is not "
-                     ++ "enough memory available (so the OS kills a process "
-                     ++ "using lots of memory)."
+        | -n == fromIntegral sigKILL
+        -> " The build process was killed (i.e. SIGKILL). " ++ explanation
+        | n == fromIntegral sigKILL
+        -> " The build process terminated with exit code "
+        ++ show n
+        ++ " which may be because some part of it was killed "
+        ++ "(i.e. SIGKILL). "
+        ++ explanation
 #endif
+        where
+          explanation =
+            "The typical reason for this is that there is not "
+              ++ "enough memory available (so the OS kills a process "
+              ++ "using lots of memory)."
       Just (ExitFailure n) ->
         " The build process terminated with exit code " ++ show n
 
       _ -> " The exception was:\n  "
 #if MIN_VERSION_base(4,8,0)
-             ++ displayException e
+                                     ++ displayException e
 #else
              ++ show e
 #endif

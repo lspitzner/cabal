@@ -34,36 +34,44 @@ import Distribution.Simple.Utils
 import Distribution.InstalledPackageInfo as InstalledPackageInfo
          ( InstalledPackageInfo(exposed) )
 
-regenerateHaddockIndex :: Verbosity
-                       -> InstalledPackageIndex -> ProgramConfiguration
-                       -> FilePath
-                       -> IO ()
+regenerateHaddockIndex
+  :: Verbosity
+  -> InstalledPackageIndex
+  -> ProgramConfiguration
+  -> FilePath
+  -> IO ()
 regenerateHaddockIndex verbosity pkgs conf index = do
-      (paths, warns) <- haddockPackagePaths pkgs' Nothing
-      let paths' = [ (interface, html) | (interface, Just html) <- paths]
-      forM_ warns (debug verbosity)
+  (paths, warns) <- haddockPackagePaths pkgs' Nothing
+  let paths' = [ (interface, html) | (interface, Just html) <- paths ]
+  forM_ warns (debug verbosity)
 
-      (confHaddock, _, _) <-
-          requireProgramVersion verbosity haddockProgram
-                                    (orLaterVersion (Version [0,6] [])) conf
+  (confHaddock, _, _) <- requireProgramVersion
+    verbosity
+    haddockProgram
+    (orLaterVersion (Version [0, 6] []))
+    conf
 
-      createDirectoryIfMissing True destDir
+  createDirectoryIfMissing True destDir
 
-      withTempDirectory verbosity destDir "tmphaddock" $ \tempDir -> do
+  withTempDirectory verbosity destDir "tmphaddock" $ \tempDir -> do
 
-        let flags = [ "--gen-contents"
-                    , "--gen-index"
-                    , "--odir=" ++ tempDir
-                    , "--title=Haskell modules on this system" ]
-                 ++ [ "--read-interface=" ++ html ++ "," ++ interface
-                    | (interface, html) <- paths' ]
-        rawSystemProgram verbosity confHaddock flags
-        renameFile (tempDir </> "index.html") (tempDir </> destFile)
-        installDirectoryContents verbosity tempDir destDir
-
+    let flags =
+          [ "--gen-contents"
+            , "--gen-index"
+            , "--odir=" ++ tempDir
+            , "--title=Haskell modules on this system"
+            ]
+            ++ [ "--read-interface=" ++ html ++ "," ++ interface
+               | (interface, html) <- paths'
+               ]
+    rawSystemProgram verbosity confHaddock flags
+    renameFile (tempDir </> "index.html") (tempDir </> destFile)
+    installDirectoryContents verbosity tempDir destDir
   where
-    (destDir,destFile) = splitFileName index
-    pkgs' = [ maximumBy (comparing packageVersion) pkgvers'
-            | (_pname, pkgvers) <- allPackagesByName pkgs
-            , let pkgvers' = filter exposed pkgvers
-            , not (null pkgvers') ]
+    (destDir, destFile) = splitFileName index
+    pkgs' =
+      [ maximumBy (comparing packageVersion) pkgvers'
+      | (_pname, pkgvers) <- allPackagesByName pkgs
+      , let pkgvers' = filter exposed pkgvers
+      , not (null pkgvers')
+      ]

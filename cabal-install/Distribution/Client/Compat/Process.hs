@@ -40,9 +40,11 @@ import qualified System.Process    as P
 --   some cases it returns an @ExitFailure@, in others it throws an
 --   exception.  This variant catches \"does not exist\" exceptions and
 --   turns them into @ExitFailure@s.
-readProcessWithExitCode :: FilePath -> [String] -> String -> IO (ExitCode, String, String)
+readProcessWithExitCode
+  :: FilePath -> [String] -> String -> IO (ExitCode, String, String)
 readProcessWithExitCode cmd args input =
   P.readProcessWithExitCode cmd args input
-    `catch` \e -> if isDoesNotExistError e
-                    then return (ExitFailure 127, "", "")
-                    else throw e
+    `catch` \e ->
+              if isDoesNotExistError e
+                then return (ExitFailure 127, "", "")
+                else throw e

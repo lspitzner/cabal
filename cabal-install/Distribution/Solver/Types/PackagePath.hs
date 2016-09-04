@@ -54,10 +54,9 @@ data Qualifier =
 -- NOTE: The result of 'showPP' is either empty or results in a period, so that
 -- it can be prepended to a package name.
 showPP :: PackagePath -> String
-showPP (PackagePath ns q) =
-    case ns of
-      DefaultNamespace -> go q
-      Independent i    -> show i ++ "." ++ go q
+showPP (PackagePath ns q) = case ns of
+  DefaultNamespace -> go q
+  Independent i    -> show i ++ "." ++ go q
   where
     -- Print the qualifier
     --

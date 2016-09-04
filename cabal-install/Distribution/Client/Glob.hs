@@ -73,16 +73,16 @@ instance Binary GlobPiece
 -- match more than one file) then the result is @Nothing@.
 --
 isTrivialFilePathGlob :: FilePathGlob -> Maybe FilePath
-isTrivialFilePathGlob (FilePathGlob root pathglob) =
-    case root of
-      FilePathRelative       -> go []      pathglob
-      FilePathRoot root'     -> go [root'] pathglob
-      FilePathHomeDir        -> Nothing
+isTrivialFilePathGlob (FilePathGlob root pathglob) = case root of
+  FilePathRelative   -> go [] pathglob
+  FilePathRoot root' -> go [root'] pathglob
+  FilePathHomeDir    -> Nothing
   where
-    go paths (GlobDir  [Literal path] globs) = go (path:paths) globs
-    go paths (GlobFile [Literal path]) = Just (joinPath (reverse (path:paths)))
-    go paths  GlobDirTrailing          = Just (addTrailingPathSeparator
-                                                 (joinPath (reverse paths)))
+    go paths (GlobDir [Literal path] globs) = go (path : paths) globs
+    go paths (GlobFile [Literal path]) =
+      Just (joinPath (reverse (path : paths)))
+    go paths GlobDirTrailing =
+      Just (addTrailingPathSeparator (joinPath (reverse paths)))
     go _ _ = Nothing
 
 -- | Get the 'FilePath' corresponding to a 'FilePathRoot'.
@@ -90,12 +90,13 @@ isTrivialFilePathGlob (FilePathGlob root pathglob) =
 -- The 'FilePath' argument is required to supply the path for the
 -- 'FilePathRelative' case.
 --
-getFilePathRootDirectory :: FilePathRoot
-                         -> FilePath      -- ^ root for relative paths
-                         -> IO FilePath
-getFilePathRootDirectory  FilePathRelative   root = return root
+getFilePathRootDirectory
+  :: FilePathRoot
+  -> FilePath      -- ^ root for relative paths
+  -> IO FilePath
+getFilePathRootDirectory FilePathRelative    root = return root
 getFilePathRootDirectory (FilePathRoot root) _    = return root
-getFilePathRootDirectory  FilePathHomeDir    _    = getHomeDirectory
+getFilePathRootDirectory FilePathHomeDir     _    = getHomeDirectory
 
 
 ------------------------------------------------------------------------------
@@ -108,11 +109,11 @@ getFilePathRootDirectory  FilePathHomeDir    _    = getHomeDirectory
 --
 matchFileGlob :: FilePath -> FilePathGlob -> IO [FilePath]
 matchFileGlob relroot (FilePathGlob globroot glob) = do
-    root <- getFilePathRootDirectory globroot relroot
-    matches <- matchFileGlobRel root glob
-    case globroot of
-      FilePathRelative -> return matches
-      _                -> return (map (root </>) matches)
+  root    <- getFilePathRootDirectory globroot relroot
+  matches <- matchFileGlobRel root glob
+  case globroot of
+    FilePathRelative -> return matches
+    _                -> return (map (root</>) matches)
 
 -- | Match a 'FilePathGlobRel' against the file system, starting from a
 -- given root directory. The results are all relative to the given root.
@@ -120,19 +121,19 @@ matchFileGlob relroot (FilePathGlob globroot glob) = do
 matchFileGlobRel :: FilePath -> FilePathGlobRel -> IO [FilePath]
 matchFileGlobRel root glob0 = go glob0 ""
   where
-    go (GlobFile glob) dir = do
+    go (GlobFile glob        ) dir = do
       entries <- getDirectoryContents (root </> dir)
       let files = filter (matchGlob glob) entries
-      return (map (dir </>) files)
+      return (map (dir</>) files)
 
     go (GlobDir glob globPath) dir = do
       entries <- getDirectoryContents (root </> dir)
-      subdirs <- filterM (\subdir -> doesDirectoryExist
-                                       (root </> dir </> subdir))
-               $ filter (matchGlob glob) entries
+      subdirs <-
+        filterM (\subdir -> doesDirectoryExist (root </> dir </> subdir))
+          $ filter (matchGlob glob) entries
       concat <$> mapM (\subdir -> go globPath (dir </> subdir)) subdirs
 
-    go GlobDirTrailing dir = return [dir]
+    go GlobDirTrailing         dir = return [dir]
 
 
 -- | Match a globbing pattern against a file path component
@@ -146,21 +147,22 @@ matchGlob = goStart
 
     go, goStart :: [GlobPiece] -> String -> Bool
 
-    goStart (WildCard:_) ('.':_)  = False
-    goStart (Union globs:rest) cs = any (\glob -> goStart (glob ++ rest) cs)
-                                        globs
-    goStart rest               cs = go rest cs
+    goStart (WildCard:_) ('.':_) = False
+    goStart (Union globs:rest) cs =
+      any (\glob -> goStart (glob ++ rest) cs) globs
+    goStart rest cs = go rest cs
 
-    go []                 ""    = True
+    go [] "" = True
     go (Literal lit:rest) cs
       | Just cs' <- stripPrefix lit cs
-                                = go rest cs'
-      | otherwise               = False
-    go [WildCard]         ""    = True
-    go (WildCard:rest)   (c:cs) = go rest (c:cs) || go (WildCard:rest) cs
-    go (Union globs:rest)   cs  = any (\glob -> go (glob ++ rest) cs) globs
-    go []                (_:_)  = False
-    go (_:_)              ""    = False
+      = go rest cs'
+      | otherwise
+      = False
+    go [WildCard        ] ""     = True
+    go (WildCard   :rest) (c:cs) = go rest (c : cs) || go (WildCard : rest) cs
+    go (Union globs:rest) cs     = any (\glob -> go (glob ++ rest) cs) globs
+    go []                 (_:_)  = False
+    go (_:_)              ""     = False
 
 
 ------------------------------------------------------------------------------
@@ -228,32 +230,33 @@ dispGlob = Disp.hcat . map dispPiece
   where
     dispPiece WildCard      = Disp.char '*'
     dispPiece (Literal str) = Disp.text (escape str)
-    dispPiece (Union globs) = Disp.braces
-                                (Disp.hcat (Disp.punctuate
-                                             (Disp.char ',')
-                                             (map dispGlob globs)))
-    escape []               = []
+    dispPiece (Union globs)
+      = Disp.braces
+        (Disp.hcat (Disp.punctuate (Disp.char ',') (map dispGlob globs)))
+    escape [] = []
     escape (c:cs)
-      | isGlobEscapedChar c = '\\' : c : escape cs
-      | otherwise           =        c : escape cs
+      | isGlobEscapedChar c
+      = '\\' : c : escape cs
+      | otherwise
+      = c : escape cs
 
 parseGlob :: ReadP r Glob
 parseGlob = Parse.many1 parsePiece
   where
     parsePiece = literal +++ wildcard +++ union
 
-    wildcard = Parse.char '*' >> return WildCard
+    wildcard   = Parse.char '*' >> return WildCard
 
-    union = Parse.between (Parse.char '{') (Parse.char '}') $
-              fmap Union (Parse.sepBy1 parseGlob (Parse.char ','))
+    union      = Parse.between (Parse.char '{') (Parse.char '}')
+      $ fmap Union (Parse.sepBy1 parseGlob (Parse.char ','))
 
-    literal = Literal `fmap` litchars1
+    literal    = Literal `fmap` litchars1
 
-    litchar = normal +++ escape
+    litchar    = normal +++ escape
 
-    normal  = Parse.satisfy (\c -> not (isGlobEscapedChar c)
-                                && c /= '/' && c /= '\\')
-    escape  = Parse.char '\\' >> Parse.satisfy isGlobEscapedChar
+    normal =
+      Parse.satisfy (\c -> not (isGlobEscapedChar c) && c /= '/' && c /= '\\')
+    escape = Parse.char '\\' >> Parse.satisfy isGlobEscapedChar
 
     litchars1 :: ReadP r [Char]
     litchars1 = liftM2 (:) litchar litchars
@@ -262,8 +265,8 @@ parseGlob = Parse.many1 parsePiece
     litchars = litchars1 <++ return []
 
 isGlobEscapedChar :: Char -> Bool
-isGlobEscapedChar '*'  = True
-isGlobEscapedChar '{'  = True
-isGlobEscapedChar '}'  = True
-isGlobEscapedChar ','  = True
-isGlobEscapedChar _    = False
+isGlobEscapedChar '*' = True
+isGlobEscapedChar '{' = True
+isGlobEscapedChar '}' = True
+isGlobEscapedChar ',' = True
+isGlobEscapedChar _   = False

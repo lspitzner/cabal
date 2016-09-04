@@ -77,13 +77,12 @@ import System.IO.Error (ioError, mkIOError, doesNotExistErrorType)
 mergeBy :: (a -> b -> Ordering) -> [a] -> [b] -> [MergeResult a b]
 mergeBy cmp = merge
   where
-    merge []     ys     = [ OnlyInRight y | y <- ys]
-    merge xs     []     = [ OnlyInLeft  x | x <- xs]
-    merge (x:xs) (y:ys) =
-      case x `cmp` y of
-        GT -> OnlyInRight   y : merge (x:xs) ys
-        EQ -> InBoth      x y : merge xs     ys
-        LT -> OnlyInLeft  x   : merge xs  (y:ys)
+    merge []     ys     = [ OnlyInRight y | y <- ys ]
+    merge xs     []     = [ OnlyInLeft x | x <- xs ]
+    merge (x:xs) (y:ys) = case x `cmp` y of
+      GT -> OnlyInRight y : merge (x : xs) ys
+      EQ -> InBoth x y : merge xs ys
+      LT -> OnlyInLeft x : merge xs (y : ys)
 
 data MergeResult a b = OnlyInLeft a | InBoth a b | OnlyInRight b
 
@@ -94,8 +93,8 @@ duplicatesBy :: (a -> a -> Ordering) -> [a] -> [[a]]
 duplicatesBy cmp = filter moreThanOne . groupBy eq . sortBy cmp
   where
     eq a b = case cmp a b of
-               EQ -> True
-               _  -> False
+      EQ -> True
+      _  -> False
     moreThanOne (_:_:_) = True
     moreThanOne _       = False
 
@@ -112,28 +111,24 @@ readMaybe s = case reads s of
 removeExistingFile :: FilePath -> IO ()
 removeExistingFile path = do
   exists <- doesFileExist path
-  when exists $
-    removeFile path
+  when exists $ removeFile path
 
 -- | A variant of 'withTempFile' that only gives us the file name, and while
 -- it will clean up the file afterwards, it's lenient if the file is
 -- moved\/deleted.
 --
-withTempFileName :: FilePath
-                 -> String
-                 -> (FilePath -> IO a) -> IO a
-withTempFileName tmpDir template action =
-  Exception.bracket
-    (openTempFile tmpDir template)
-    (\(name, _) -> removeExistingFile name)
-    (\(name, h) -> hClose h >> action name)
+withTempFileName :: FilePath -> String -> (FilePath -> IO a) -> IO a
+withTempFileName tmpDir template action = Exception.bracket
+  (openTempFile tmpDir template)
+  (\(name, _) -> removeExistingFile name)
+  (\(name, h) -> hClose h >> action name)
 
 -- | Executes the action in the specified directory.
 --
 -- Warning: This operation is NOT thread-safe, because current
 -- working directory is a process-global concept.
 inDir :: Maybe FilePath -> IO a -> IO a
-inDir Nothing m = m
+inDir Nothing  m = m
 inDir (Just d) m = do
   old <- getCurrentDirectory
   setCurrentDirectory d
@@ -141,11 +136,10 @@ inDir (Just d) m = do
 
 -- | Log directory change in 'make' compatible syntax
 logDirChange :: (String -> IO ()) -> Maybe FilePath -> IO a -> IO a
-logDirChange _ Nothing m = m
+logDirChange _ Nothing  m = m
 logDirChange l (Just d) m = do
   l $ "cabal: Entering directory '" ++ d ++ "'\n"
-  m `Exception.finally`
-    (l $ "cabal: Leaving directory '" ++ d ++ "'\n")
+  m `Exception.finally` (l $ "cabal: Leaving directory '" ++ d ++ "'\n")
 
 foreign import ccall "getNumberOfProcessors" c_getNumberOfProcessors :: IO CInt
 
@@ -156,54 +150,58 @@ numberOfProcessors = fromEnum $ unsafePerformIO c_getNumberOfProcessors
 
 -- | Determine the number of jobs to use given the value of the '-j' flag.
 determineNumJobs :: Flag (Maybe Int) -> Int
-determineNumJobs numJobsFlag =
-  case numJobsFlag of
-    NoFlag        -> 1
-    Flag Nothing  -> numberOfProcessors
-    Flag (Just n) -> n
+determineNumJobs numJobsFlag = case numJobsFlag of
+  NoFlag        -> 1
+  Flag Nothing  -> numberOfProcessors
+  Flag (Just n) -> n
 
 -- | Given a relative path, make it absolute relative to the current
 -- directory. Absolute paths are returned unmodified.
 makeAbsoluteToCwd :: FilePath -> IO FilePath
-makeAbsoluteToCwd path | isAbsolute path = return path
-                       | otherwise       = do cwd <- getCurrentDirectory
-                                              return $! cwd </> path
+makeAbsoluteToCwd path
+  | isAbsolute path
+  = return path
+  | otherwise
+  = do
+    cwd <- getCurrentDirectory
+    return $! cwd </> path
 
 -- | Given a path (relative or absolute), make it relative to the current
 -- directory, including using @../..@ if necessary.
 makeRelativeToCwd :: FilePath -> IO FilePath
 makeRelativeToCwd path =
-    makeRelativeCanonical <$> canonicalizePath path <*> getCurrentDirectory
+  makeRelativeCanonical <$> canonicalizePath path <*> getCurrentDirectory
 
 -- | Given a path (relative or absolute), make it relative to the given
 -- directory, including using @../..@ if necessary.
 makeRelativeToDir :: FilePath -> FilePath -> IO FilePath
 makeRelativeToDir path dir =
-    makeRelativeCanonical <$> canonicalizePath path <*> canonicalizePath dir
+  makeRelativeCanonical <$> canonicalizePath path <*> canonicalizePath dir
 
 -- | Given a canonical absolute path and canonical absolute dir, make the path
 -- relative to the directory, including using @../..@ if necessary. Returns
 -- the original absolute path if it is not on the same drive as the given dir.
 makeRelativeCanonical :: FilePath -> FilePath -> FilePath
 makeRelativeCanonical path dir
-  | takeDrive path /= takeDrive dir = path
-  | otherwise                       = go (splitPath path) (splitPath dir)
+  | takeDrive path /= takeDrive dir
+  = path
+  | otherwise
+  = go (splitPath path) (splitPath dir)
   where
     go (p:ps) (d:ds) | p == d = go ps ds
-    go    []     []           = "./"
-    go    ps     ds           = joinPath (replicate (length ds) ".." ++ ps)
+    go []     []              = "./"
+    go ps     ds              = joinPath (replicate (length ds) ".." ++ ps)
 
 -- | Convert a 'FilePath' to a lazy 'ByteString'. Each 'Char' is
 -- encoded as a little-endian 'Word32'.
 filePathToByteString :: FilePath -> BS.ByteString
-filePathToByteString p =
-  BS.pack $ foldr conv [] codepts
+filePathToByteString p = BS.pack $ foldr conv [] codepts
   where
     codepts :: [Word32]
     codepts = map (fromIntegral . ord) p
 
     conv :: Word32 -> [Word8] -> [Word8]
-    conv w32 rest = b0:b1:b2:b3:rest
+    conv w32 rest = b0 : b1 : b2 : b3 : rest
       where
         b0 = fromIntegral $ w32
         b1 = fromIntegral $ w32 `shiftR` 8
@@ -212,32 +210,39 @@ filePathToByteString p =
 
 -- | Reverse operation to 'filePathToByteString'.
 byteStringToFilePath :: BS.ByteString -> FilePath
-byteStringToFilePath bs | bslen `mod` 4 /= 0 = unexpected
-                        | otherwise = go 0
+byteStringToFilePath bs
+  | bslen `mod` 4 /= 0
+  = unexpected
+  | otherwise
+  = go 0
   where
     unexpected = "Distribution.Client.Utils.byteStringToFilePath: unexpected"
-    bslen = BS.length bs
+    bslen      = BS.length bs
 
-    go i | i == bslen = []
-         | otherwise = (chr . fromIntegral $ w32) : go (i+4)
+    go i
+      | i == bslen
+      = []
+      | otherwise
+      = (chr . fromIntegral $ w32) : go (i + 4)
       where
         w32 :: Word32
         w32 = b0 .|. (b1 `shiftL` 8) .|. (b2 `shiftL` 16) .|. (b3 `shiftL` 24)
-        b0 = fromIntegral $ BS.index bs i
-        b1 = fromIntegral $ BS.index bs (i + 1)
-        b2 = fromIntegral $ BS.index bs (i + 2)
-        b3 = fromIntegral $ BS.index bs (i + 3)
+        b0  = fromIntegral $ BS.index bs i
+        b1  = fromIntegral $ BS.index bs (i + 1)
+        b2  = fromIntegral $ BS.index bs (i + 2)
+        b3  = fromIntegral $ BS.index bs (i + 3)
 
 -- | Workaround for the inconsistent behaviour of 'canonicalizePath'. Always
 -- throws an error if the path refers to a non-existent file.
 tryCanonicalizePath :: FilePath -> IO FilePath
 tryCanonicalizePath path = do
-  ret <- canonicalizePath path
+  ret    <- canonicalizePath path
 #if defined(mingw32_HOST_OS) || MIN_VERSION_directory(1,2,3)
   exists <- liftM2 (||) (doesFileExist ret) (doesDirectoryExist ret)
-  unless exists $
-    ioError $ mkIOError doesNotExistErrorType "canonicalizePath"
-                        Nothing (Just ret)
+  unless exists $ ioError $ mkIOError doesNotExistErrorType
+                                      "canonicalizePath"
+                                      Nothing
+                                      (Just ret)
 #endif
   return ret
 
@@ -258,17 +263,16 @@ moreRecentFile a b = do
   exists <- doesFileExist b
   if not exists
     then return True
-    else do tb <- getModTime b
-            ta <- getModTime a
-            return (ta > tb)
+    else do
+      tb <- getModTime b
+      ta <- getModTime a
+      return (ta > tb)
 
 -- | Like 'moreRecentFile', but also checks that the first file exists.
 existsAndIsMoreRecentThan :: FilePath -> FilePath -> IO Bool
 existsAndIsMoreRecentThan a b = do
   exists <- doesFileExist a
-  if not exists
-    then return False
-    else a `moreRecentFile` b
+  if not exists then return False else a `moreRecentFile` b
 
 -- | Sets the handler for encoding errors to one that transliterates invalid
 -- characters into one present in the encoding (i.e., \'?\').
@@ -282,15 +286,18 @@ relaxEncodingErrors handle = do
   case maybeEncoding of
     Just (TextEncoding name decoder encoder) | not ("UTF" `isPrefixOf` name) ->
       let relax x = x { recover = recoverEncode TransliterateCodingFailure }
-      in hSetEncoding handle (TextEncoding name decoder (fmap relax encoder))
+      in  hSetEncoding handle (TextEncoding name decoder (fmap relax encoder))
     _ ->
 #endif
-      return ()
+         return ()
 
 -- |Like 'tryFindPackageDesc', but with error specific to add-source deps.
 tryFindAddSourcePackageDesc :: FilePath -> String -> IO FilePath
-tryFindAddSourcePackageDesc depPath err = tryFindPackageDesc depPath $
-    err ++ "\n" ++ "Failed to read cabal file of add-source dependency: "
+tryFindAddSourcePackageDesc depPath err =
+  tryFindPackageDesc depPath
+    $  err
+    ++ "\n"
+    ++ "Failed to read cabal file of add-source dependency: "
     ++ depPath
 
 -- |Try to find a @.cabal@ file, in directory @depPath@. Fails if one cannot be
@@ -298,7 +305,7 @@ tryFindAddSourcePackageDesc depPath err = tryFindPackageDesc depPath $
 -- us to give a more descriptive error than that provided by @findPackageDesc@.
 tryFindPackageDesc :: FilePath -> String -> IO FilePath
 tryFindPackageDesc depPath err = do
-    errOrCabalFile <- findPackageDesc depPath
-    case errOrCabalFile of
-        Right file -> return file
-        Left _ -> die err
+  errOrCabalFile <- findPackageDesc depPath
+  case errOrCabalFile of
+    Right file -> return file
+    Left  _    -> die err

@@ -32,7 +32,7 @@ instance Package (ResolverPackage loc) where
 
 resolverPackageDeps :: ResolverPackage loc -> CD.ComponentDeps [SolverId]
 resolverPackageDeps (PreExisting _ deps) = deps
-resolverPackageDeps (Configured spkg) = solverPkgDeps spkg
+resolverPackageDeps (Configured spkg   ) = solverPkgDeps spkg
 
 instance IsNode (ResolverPackage loc) where
   type Key (ResolverPackage loc) = SolverId

@@ -214,7 +214,7 @@ data BuildReason =
 --
 buildStatusRequiresBuild :: BuildStatus -> Bool
 buildStatusRequiresBuild BuildStatusPreExisting = False
-buildStatusRequiresBuild BuildStatusUpToDate {} = False
+buildStatusRequiresBuild BuildStatusUpToDate{}  = False
 buildStatusRequiresBuild _                      = True
 
 -- | Do the dry run pass. This is a prerequisite of 'rebuildTargets'.
@@ -223,24 +223,24 @@ buildStatusRequiresBuild _                      = True
 -- the 'ElaboratedInstallPlan' with packages switched to the
 -- 'InstallPlan.Installed' state when we find that they're already up to date.
 --
-rebuildTargetsDryRun :: DistDirLayout
-                     -> ElaboratedInstallPlan
-                     -> IO (ElaboratedInstallPlan, BuildStatusMap)
-rebuildTargetsDryRun distDirLayout@DistDirLayout{..} = \installPlan -> do
+rebuildTargetsDryRun
+  :: DistDirLayout
+  -> ElaboratedInstallPlan
+  -> IO (ElaboratedInstallPlan, BuildStatusMap)
+rebuildTargetsDryRun distDirLayout@DistDirLayout {..} = \installPlan -> do
 
     -- Do the various checks to work out the 'BuildStatus' of each package
-    pkgsBuildStatus <- foldMInstallPlanDepOrder installPlan dryRunPkg
+  pkgsBuildStatus <- foldMInstallPlanDepOrder installPlan dryRunPkg
 
-    -- For 'BuildStatusUpToDate' packages, improve the plan by marking them as
-    -- 'InstallPlan.Installed'.
-    let installPlan' = improveInstallPlanWithUpToDatePackages
-                         installPlan pkgsBuildStatus
+  -- For 'BuildStatusUpToDate' packages, improve the plan by marking them as
+  -- 'InstallPlan.Installed'.
+  let installPlan' =
+        improveInstallPlanWithUpToDatePackages installPlan pkgsBuildStatus
 
-    return (installPlan', pkgsBuildStatus)
+  return (installPlan', pkgsBuildStatus)
   where
-    dryRunPkg :: ElaboratedPlanPackage
-              -> ComponentDeps [BuildStatus]
-              -> IO BuildStatus
+    dryRunPkg
+      :: ElaboratedPlanPackage -> ComponentDeps [BuildStatus] -> IO BuildStatus
     dryRunPkg (InstallPlan.PreExisting _pkg) _depsBuildStatus =
       return BuildStatusPreExisting
 
@@ -257,7 +257,7 @@ rebuildTargetsDryRun distDirLayout@DistDirLayout{..} = \installPlan -> do
 
         -- The three tarball cases are handled the same as each other,
         -- though depending on the build style.
-        Just (LocalTarballPackage    tarball) ->
+        Just (LocalTarballPackage tarball) ->
           dryRunTarballPkg pkg depsBuildStatus tarball
 
         Just (RemoteTarballPackage _ tarball) ->
@@ -266,42 +266,42 @@ rebuildTargetsDryRun distDirLayout@DistDirLayout{..} = \installPlan -> do
         Just (RepoTarballPackage _ _ tarball) ->
           dryRunTarballPkg pkg depsBuildStatus tarball
 
-    dryRunTarballPkg :: ElaboratedConfiguredPackage
-                     -> ComponentDeps [BuildStatus]
-                     -> FilePath
-                     -> IO BuildStatus
-    dryRunTarballPkg pkg depsBuildStatus tarball =
-      case pkgBuildStyle pkg of
-        BuildAndInstall  -> return (BuildStatusUnpack tarball)
-        BuildInplaceOnly -> do
-          -- TODO: [nice to have] use a proper file monitor rather than this dir exists test
-          exists <- doesDirectoryExist srcdir
-          if exists
-            then dryRunLocalPkg pkg depsBuildStatus srcdir
-            else return (BuildStatusUnpack tarball)
+    dryRunTarballPkg
+      :: ElaboratedConfiguredPackage
+      -> ComponentDeps [BuildStatus]
+      -> FilePath
+      -> IO BuildStatus
+    dryRunTarballPkg pkg depsBuildStatus tarball = case pkgBuildStyle pkg of
+      BuildAndInstall  -> return (BuildStatusUnpack tarball)
+      BuildInplaceOnly -> do
+        -- TODO: [nice to have] use a proper file monitor rather than this dir exists test
+        exists <- doesDirectoryExist srcdir
+        if exists
+          then dryRunLocalPkg pkg depsBuildStatus srcdir
+          else return (BuildStatusUnpack tarball)
       where
         srcdir = distUnpackedSrcDirectory (packageId pkg)
 
-    dryRunLocalPkg :: ElaboratedConfiguredPackage
-                   -> ComponentDeps [BuildStatus]
-                   -> FilePath
-                   -> IO BuildStatus
+    dryRunLocalPkg
+      :: ElaboratedConfiguredPackage
+      -> ComponentDeps [BuildStatus]
+      -> FilePath
+      -> IO BuildStatus
     dryRunLocalPkg pkg depsBuildStatus srcdir = do
         -- Go and do lots of I/O, reading caches and probing files to work out
         -- if anything has changed
-        change <- checkPackageFileMonitorChanged
-                    packageFileMonitor pkg srcdir depsBuildStatus
-        case change of
-          -- It did change, giving us 'BuildStatusRebuild' info on why
-          Left rebuild ->
-            return (BuildStatusRebuild srcdir rebuild)
+      change <- checkPackageFileMonitorChanged packageFileMonitor
+                                               pkg
+                                               srcdir
+                                               depsBuildStatus
+      case change of
+        -- It did change, giving us 'BuildStatusRebuild' info on why
+        Left  rebuild      -> return (BuildStatusRebuild srcdir rebuild)
 
-          -- No changes, the package is up to date. Use the saved build results.
-          Right buildSuccess ->
-            return (BuildStatusUpToDate buildSuccess)
+        -- No changes, the package is up to date. Use the saved build results.
+        Right buildSuccess -> return (BuildStatusUpToDate buildSuccess)
       where
-        packageFileMonitor =
-          newPackageFileMonitor distDirLayout (packageId pkg)
+        packageFileMonitor = newPackageFileMonitor distDirLayout (packageId pkg)
 
 
 -- | A specialised traversal over the packages in an install plan.
@@ -313,51 +313,58 @@ rebuildTargetsDryRun distDirLayout@DistDirLayout{..} = \installPlan -> do
 -- depencencies. This can be used to propagate information from depencencies.
 --
 foldMInstallPlanDepOrder
-  :: forall m ipkg srcpkg b.
-     (Monad m,
-      HasUnitId ipkg,   PackageFixedDeps ipkg,
-      HasUnitId srcpkg, PackageFixedDeps srcpkg)
+  :: forall m ipkg srcpkg b
+   . ( Monad m
+     , HasUnitId ipkg
+     , PackageFixedDeps ipkg
+     , HasUnitId srcpkg
+     , PackageFixedDeps srcpkg
+     )
   => GenericInstallPlan ipkg srcpkg
-  -> (GenericPlanPackage ipkg srcpkg ->
-      ComponentDeps [b] -> m b)
+  -> (GenericPlanPackage ipkg srcpkg -> ComponentDeps [b] -> m b)
   -> m (Map InstalledPackageId b)
-foldMInstallPlanDepOrder plan0 visit =
-    go Map.empty (InstallPlan.reverseTopologicalOrder plan0)
+foldMInstallPlanDepOrder plan0 visit = go
+  Map.empty
+  (InstallPlan.reverseTopologicalOrder plan0)
   where
-    go :: Map InstalledPackageId b
-       -> [GenericPlanPackage ipkg srcpkg]
-       -> m (Map InstalledPackageId b)
-    go !results [] = return results
+    go
+      :: Map InstalledPackageId b
+      -> [GenericPlanPackage ipkg srcpkg]
+      -> m (Map InstalledPackageId b)
+    go !results []         = return results
 
-    go !results (pkg : pkgs) = do
+    go !results (pkg:pkgs) = do
       -- we go in the right order so the results map has entries for all deps
-      let depresults :: ComponentDeps [b]
-          depresults =
-            fmap (map (\ipkgid -> let Just result = Map.lookup ipkgid results
-                                   in result))
-                 (depends pkg)
+      let
+        depresults :: ComponentDeps [b]
+        depresults = fmap
+          ( map
+            (\ipkgid -> let Just result = Map.lookup ipkgid results in result)
+          )
+          (depends pkg)
       result <- visit pkg depresults
       let results' = Map.insert (installedPackageId pkg) result results
       go results' pkgs
 
-improveInstallPlanWithUpToDatePackages :: ElaboratedInstallPlan
-                                       -> BuildStatusMap
-                                       -> ElaboratedInstallPlan
+improveInstallPlanWithUpToDatePackages
+  :: ElaboratedInstallPlan -> BuildStatusMap -> ElaboratedInstallPlan
 improveInstallPlanWithUpToDatePackages installPlan pkgsBuildStatus =
-    replaceWithPrePreExisting installPlan
-      [ (installedPackageId pkg, ipkgs)
-      | InstallPlan.Configured pkg
-          <- InstallPlan.reverseTopologicalOrder installPlan
-      , let ipkgid = installedPackageId pkg
-            Just pkgBuildStatus = Map.lookup ipkgid pkgsBuildStatus
-      , BuildStatusUpToDate (BuildOk _ _ ipkgs) <- [pkgBuildStatus]
-      ]
+  replaceWithPrePreExisting
+    installPlan
+    [ (installedPackageId pkg, ipkgs)
+    | InstallPlan.Configured pkg <- InstallPlan.reverseTopologicalOrder
+      installPlan
+    , let ipkgid              = installedPackageId pkg
+          Just pkgBuildStatus = Map.lookup ipkgid pkgsBuildStatus
+    , BuildStatusUpToDate (BuildOk _ _ ipkgs) <- [pkgBuildStatus]
+    ]
   where
-    replaceWithPrePreExisting =
-      foldl' (\plan (ipkgid, ipkgs) ->
-                case find (\ipkg -> installedPackageId ipkg == ipkgid) ipkgs of
-                  Just ipkg -> InstallPlan.preexisting ipkgid ipkg plan
-                  Nothing   -> unexpected)
+    replaceWithPrePreExisting = foldl'
+      ( \plan (ipkgid, ipkgs) ->
+        case find (\ipkg -> installedPackageId ipkg == ipkgid) ipkgs of
+          Just ipkg -> InstallPlan.preexisting ipkgid ipkg plan
+          Nothing   -> unexpected
+      )
     unexpected =
       error "improveInstallPlanWithUpToDatePackages: dep on non lib package"
 
@@ -391,21 +398,18 @@ data PackageFileMonitor = PackageFileMonitor {
 type BuildSuccessMisc = (DocsResult, TestsResult)
 
 newPackageFileMonitor :: DistDirLayout -> PackageId -> PackageFileMonitor
-newPackageFileMonitor DistDirLayout{distPackageCacheFile} pkgid =
-    PackageFileMonitor {
-      pkgFileMonitorConfig =
-        newFileMonitor (distPackageCacheFile pkgid "config"),
-
-      pkgFileMonitorBuild =
-        FileMonitor {
-          fileMonitorCacheFile = distPackageCacheFile pkgid "build",
-          fileMonitorKeyValid  = \componentsToBuild componentsAlreadyBuilt ->
-            componentsToBuild `Set.isSubsetOf` componentsAlreadyBuilt,
-          fileMonitorCheckIfOnlyValueChanged = True
-        },
-
-      pkgFileMonitorReg =
-        newFileMonitor (distPackageCacheFile pkgid "registration")
+newPackageFileMonitor DistDirLayout { distPackageCacheFile } pkgid =
+  PackageFileMonitor
+    { pkgFileMonitorConfig = newFileMonitor
+      (distPackageCacheFile pkgid "config")
+    , pkgFileMonitorBuild  = FileMonitor
+      { fileMonitorCacheFile = distPackageCacheFile pkgid "build"
+      , fileMonitorKeyValid = \componentsToBuild componentsAlreadyBuilt ->
+        componentsToBuild `Set.isSubsetOf` componentsAlreadyBuilt
+      , fileMonitorCheckIfOnlyValueChanged = True
+      }
+    , pkgFileMonitorReg    = newFileMonitor
+      (distPackageCacheFile pkgid "registration")
     }
 
 -- | Helper function for 'checkPackageFileMonitorChanged',
@@ -414,10 +418,10 @@ newPackageFileMonitor DistDirLayout{distPackageCacheFile} pkgid =
 -- It selects the info from a 'ElaboratedConfiguredPackage' that are used by
 -- the 'FileMonitor's (in the 'PackageFileMonitor') to detect value changes.
 --
-packageFileMonitorKeyValues :: ElaboratedConfiguredPackage
-                            -> (ElaboratedConfiguredPackage, Set ComponentName)
-packageFileMonitorKeyValues pkg =
-    (pkgconfig, buildComponents)
+packageFileMonitorKeyValues
+  :: ElaboratedConfiguredPackage
+  -> (ElaboratedConfiguredPackage, Set ComponentName)
+packageFileMonitorKeyValues pkg = (pkgconfig, buildComponents)
   where
     -- The first part is the value used to guard (re)configuring the package.
     -- That is, if this value changes then we will reconfigure.
@@ -426,11 +430,10 @@ packageFileMonitorKeyValues pkg =
     -- do not affect the configure step need to be nulled out. Those parts are
     -- the specific targets that we're going to build.
     --
-    pkgconfig = pkg {
-      pkgBuildTargets  = [],
-      pkgReplTarget    = Nothing,
-      pkgBuildHaddocks = False
-    }
+    pkgconfig       = pkg { pkgBuildTargets  = []
+                          , pkgReplTarget    = Nothing
+                          , pkgBuildHaddocks = False
+                          }
 
     -- The second part is the value used to guard the build step. So this is
     -- more or less the opposite of the first part, as it's just the info about
@@ -441,99 +444,101 @@ packageFileMonitorKeyValues pkg =
 -- | Do all the checks on whether a package has changed and thus needs either
 -- rebuilding or reconfiguring and rebuilding.
 --
-checkPackageFileMonitorChanged :: PackageFileMonitor
-                               -> ElaboratedConfiguredPackage
-                               -> FilePath
-                               -> ComponentDeps [BuildStatus]
-                               -> IO (Either BuildStatusRebuild BuildSuccess)
-checkPackageFileMonitorChanged PackageFileMonitor{..}
-                               pkg srcdir depsBuildStatus = do
+checkPackageFileMonitorChanged
+  :: PackageFileMonitor
+  -> ElaboratedConfiguredPackage
+  -> FilePath
+  -> ComponentDeps [BuildStatus]
+  -> IO (Either BuildStatusRebuild BuildSuccess)
+checkPackageFileMonitorChanged PackageFileMonitor {..} pkg srcdir depsBuildStatus
+  = do
     --TODO: [nice to have] some debug-level message about file changes, like rerunIfChanged
-    configChanged <- checkFileMonitorChanged
-                       pkgFileMonitorConfig srcdir pkgconfig
+    configChanged <- checkFileMonitorChanged pkgFileMonitorConfig
+                                             srcdir
+                                             pkgconfig
     case configChanged of
       MonitorChanged monitorReason ->
-          return (Left (BuildStatusConfigure monitorReason'))
+        return (Left (BuildStatusConfigure monitorReason'))
         where
           monitorReason' = fmap (const ()) monitorReason
 
       MonitorUnchanged () _
+        |
           -- The configChanged here includes the identity of the dependencies,
           -- so depsBuildStatus is just needed for the changes in the content
           -- of depencencies.
-        | any buildStatusRequiresBuild (CD.flatDeps depsBuildStatus) -> do
-            regChanged <- checkFileMonitorChanged pkgFileMonitorReg srcdir ()
-            let mreg = changedToMaybe regChanged
-            return (Left (BuildStatusBuild mreg BuildReasonDepsRebuilt))
+          any buildStatusRequiresBuild (CD.flatDeps depsBuildStatus)
+        -> do
+          regChanged <- checkFileMonitorChanged pkgFileMonitorReg srcdir ()
+          let mreg = changedToMaybe regChanged
+          return (Left (BuildStatusBuild mreg BuildReasonDepsRebuilt))
+        | otherwise
+        -> do
+          buildChanged <- checkFileMonitorChanged pkgFileMonitorBuild
+                                                  srcdir
+                                                  buildComponents
+          regChanged   <- checkFileMonitorChanged pkgFileMonitorReg srcdir ()
+          let mreg = changedToMaybe regChanged
+          case (buildChanged, regChanged) of
+            (MonitorChanged (MonitoredValueChanged prevBuildComponents), _) ->
+              return (Left (BuildStatusBuild mreg buildReason))
+              where
+                buildReason = BuildReasonExtraTargets prevBuildComponents
 
-        | otherwise -> do
-            buildChanged  <- checkFileMonitorChanged
-                               pkgFileMonitorBuild srcdir buildComponents
-            regChanged    <- checkFileMonitorChanged
-                               pkgFileMonitorReg srcdir ()
-            let mreg = changedToMaybe regChanged
-            case (buildChanged, regChanged) of
-              (MonitorChanged (MonitoredValueChanged prevBuildComponents), _) ->
-                  return (Left (BuildStatusBuild mreg buildReason))
-                where
-                  buildReason = BuildReasonExtraTargets prevBuildComponents
+            (MonitorChanged monitorReason, _) ->
+              return (Left (BuildStatusBuild mreg buildReason))
+              where
+                buildReason    = BuildReasonFilesChanged monitorReason'
+                monitorReason' = fmap (const ()) monitorReason
 
-              (MonitorChanged monitorReason, _) ->
-                  return (Left (BuildStatusBuild mreg buildReason))
-                where
-                  buildReason    = BuildReasonFilesChanged monitorReason'
-                  monitorReason' = fmap (const ()) monitorReason
+            (MonitorUnchanged _ _, MonitorChanged monitorReason) ->
+              -- this should only happen if the file is corrupt or been
+              -- manually deleted. We don't want to bother with another
+              -- phase just for this, so we'll reregister by doing a build.
+              return (Left (BuildStatusBuild Nothing buildReason))
+              where
+                buildReason    = BuildReasonFilesChanged monitorReason'
+                monitorReason' = fmap (const ()) monitorReason
 
-              (MonitorUnchanged _ _, MonitorChanged monitorReason) ->
-                -- this should only happen if the file is corrupt or been
-                -- manually deleted. We don't want to bother with another
-                -- phase just for this, so we'll reregister by doing a build.
-                  return (Left (BuildStatusBuild Nothing buildReason))
-                where
-                  buildReason    = BuildReasonFilesChanged monitorReason'
-                  monitorReason' = fmap (const ()) monitorReason
+            (MonitorUnchanged _ _, MonitorUnchanged _ _)
+              | pkgHasEphemeralBuildTargets pkg
+              -> return (Left (BuildStatusBuild mreg buildReason))
+              where
+                buildReason = BuildReasonEphemeralTargets
 
-              (MonitorUnchanged _ _, MonitorUnchanged _ _)
-                | pkgHasEphemeralBuildTargets pkg ->
-                  return (Left (BuildStatusBuild mreg buildReason))
-                where
-                  buildReason = BuildReasonEphemeralTargets
-
-              (MonitorUnchanged buildSuccess _, MonitorUnchanged ipkgs _) ->
-                  return (Right (BuildOk docsResult testsResult ipkgs))
-                where
-                  (docsResult, testsResult) = buildSuccess
+            (MonitorUnchanged buildSuccess _, MonitorUnchanged ipkgs _) ->
+              return (Right (BuildOk docsResult testsResult ipkgs))
+              where
+                (docsResult, testsResult) = buildSuccess
   where
     (pkgconfig, buildComponents) = packageFileMonitorKeyValues pkg
-    changedToMaybe (MonitorChanged     _) = Nothing
+    changedToMaybe (MonitorChanged _    ) = Nothing
     changedToMaybe (MonitorUnchanged x _) = Just x
 
 
-updatePackageConfigFileMonitor :: PackageFileMonitor
-                               -> FilePath
-                               -> ElaboratedConfiguredPackage
-                               -> IO ()
-updatePackageConfigFileMonitor PackageFileMonitor{pkgFileMonitorConfig}
-                               srcdir pkg =
-    updateFileMonitor pkgFileMonitorConfig srcdir Nothing
-                      [] pkgconfig ()
+updatePackageConfigFileMonitor
+  :: PackageFileMonitor -> FilePath -> ElaboratedConfiguredPackage -> IO ()
+updatePackageConfigFileMonitor PackageFileMonitor { pkgFileMonitorConfig } srcdir pkg
+  = updateFileMonitor pkgFileMonitorConfig srcdir Nothing [] pkgconfig ()
   where
     (pkgconfig, _buildComponents) = packageFileMonitorKeyValues pkg
 
-updatePackageBuildFileMonitor :: PackageFileMonitor
-                              -> FilePath
-                              -> MonitorTimestamp
-                              -> ElaboratedConfiguredPackage
-                              -> BuildStatusRebuild
-                              -> [FilePath]
-                              -> BuildSuccessMisc
-                              -> IO ()
-updatePackageBuildFileMonitor PackageFileMonitor{pkgFileMonitorBuild}
-                              srcdir timestamp pkg pkgBuildStatus
-                              allSrcFiles buildSuccess =
-    updateFileMonitor pkgFileMonitorBuild srcdir (Just timestamp)
+updatePackageBuildFileMonitor
+  :: PackageFileMonitor
+  -> FilePath
+  -> MonitorTimestamp
+  -> ElaboratedConfiguredPackage
+  -> BuildStatusRebuild
+  -> [FilePath]
+  -> BuildSuccessMisc
+  -> IO ()
+updatePackageBuildFileMonitor PackageFileMonitor { pkgFileMonitorBuild } srcdir timestamp pkg pkgBuildStatus allSrcFiles buildSuccess
+  = updateFileMonitor pkgFileMonitorBuild
+                      srcdir
+                      (Just timestamp)
                       (map monitorFileHashed allSrcFiles)
-                      buildComponents' buildSuccess
+                      buildComponents'
+                      buildSuccess
   where
     (_pkgconfig, buildComponents) = packageFileMonitorKeyValues pkg
 
@@ -544,24 +549,19 @@ updatePackageBuildFileMonitor PackageFileMonitor{pkgFileMonitorBuild}
     -- the wrong thing to do. Note that we rely on the
     -- fileMonitorCheckIfOnlyValueChanged = True mode to get this guarantee
     -- that it's /only/ the value that changed not any files that changed.
-    buildComponents' =
-      case pkgBuildStatus of
-        BuildStatusBuild _ (BuildReasonExtraTargets prevBuildComponents)
-          -> buildComponents `Set.union` prevBuildComponents
-        _ -> buildComponents
+    buildComponents'              = case pkgBuildStatus of
+      BuildStatusBuild _ (BuildReasonExtraTargets prevBuildComponents) ->
+        buildComponents `Set.union` prevBuildComponents
+      _ -> buildComponents
 
-updatePackageRegFileMonitor :: PackageFileMonitor
-                            -> FilePath
-                            -> [InstalledPackageInfo]
-                            -> IO ()
-updatePackageRegFileMonitor PackageFileMonitor{pkgFileMonitorReg}
-                            srcdir ipkgs =
-    updateFileMonitor pkgFileMonitorReg srcdir Nothing
-                      [] () ipkgs
+updatePackageRegFileMonitor
+  :: PackageFileMonitor -> FilePath -> [InstalledPackageInfo] -> IO ()
+updatePackageRegFileMonitor PackageFileMonitor { pkgFileMonitorReg } srcdir ipkgs
+  = updateFileMonitor pkgFileMonitorReg srcdir Nothing [] () ipkgs
 
 invalidatePackageRegFileMonitor :: PackageFileMonitor -> IO ()
-invalidatePackageRegFileMonitor PackageFileMonitor{pkgFileMonitorReg} =
-    removeExistingFile (fileMonitorCacheFile pkgFileMonitorReg)
+invalidatePackageRegFileMonitor PackageFileMonitor { pkgFileMonitorReg } =
+  removeExistingFile (fileMonitorCacheFile pkgFileMonitorReg)
 
 
 ------------------------------------------------------------------------------
@@ -573,33 +573,24 @@ invalidatePackageRegFileMonitor PackageFileMonitor{pkgFileMonitorReg} =
 --
 -- It requires the 'BuildStatusMap' gathered by 'rebuildTargetsDryRun'.
 --
-rebuildTargets :: Verbosity
-               -> DistDirLayout
-               -> ElaboratedInstallPlan
-               -> ElaboratedSharedConfig
-               -> BuildStatusMap
-               -> BuildTimeSettings
-               -> IO BuildResults
-rebuildTargets verbosity
-               distDirLayout@DistDirLayout{..}
-               installPlan
-               sharedPackageConfig@ElaboratedSharedConfig {
-                 pkgConfigCompiler      = compiler,
-                 pkgConfigCompilerProgs = progdb
-               }
-               pkgsBuildStatus
-               buildSettings@BuildTimeSettings{
-                 buildSettingNumJobs,
-                 buildSettingKeepGoing
-               } = do
+rebuildTargets
+  :: Verbosity
+  -> DistDirLayout
+  -> ElaboratedInstallPlan
+  -> ElaboratedSharedConfig
+  -> BuildStatusMap
+  -> BuildTimeSettings
+  -> IO BuildResults
+rebuildTargets verbosity distDirLayout@DistDirLayout {..} installPlan sharedPackageConfig@ElaboratedSharedConfig { pkgConfigCompiler = compiler, pkgConfigCompilerProgs = progdb } pkgsBuildStatus buildSettings@BuildTimeSettings { buildSettingNumJobs, buildSettingKeepGoing }
+  = do
 
     -- Concurrency control: create the job controller and concurrency limits
     -- for downloading, building and installing.
-    jobControl    <- if isParallelBuild
-                       then newParallelJobControl buildSettingNumJobs
-                       else newSerialJobControl
-    registerLock  <- newLock -- serialise registration
-    cacheLock     <- newLock -- serialise access to setup exe cache
+    jobControl   <- if isParallelBuild
+      then newParallelJobControl buildSettingNumJobs
+      else newSerialJobControl
+    registerLock <- newLock -- serialise registration
+    cacheLock    <- newLock -- serialise access to setup exe cache
                              --TODO: [code cleanup] eliminate setup exe cache
 
     createDirectoryIfMissingVerbose verbosity False distBuildRootDirectory
@@ -608,85 +599,88 @@ rebuildTargets verbosity
 
     -- Before traversing the install plan, pre-emptively find all packages that
     -- will need to be downloaded and start downloading them.
-    asyncDownloadPackages verbosity withRepoCtx
-                          installPlan pkgsBuildStatus $ \downloadMap ->
+    asyncDownloadPackages verbosity withRepoCtx installPlan pkgsBuildStatus
+      $ \downloadMap ->
 
       -- For each package in the plan, in dependency order, but in parallel...
-      InstallPlan.execute jobControl keepGoing (DependentFailed . packageId)
-                          installPlan $ \pkg ->
-        handle (return . Left) $ fmap Right $ --TODO: review exception handling
-
-        let ipkgid = installedPackageId pkg
-            Just pkgBuildStatus = Map.lookup ipkgid pkgsBuildStatus in
-
-        rebuildTarget
-          verbosity
-          distDirLayout
-          buildSettings downloadMap
-          registerLock cacheLock
-          sharedPackageConfig
-          pkg
-          pkgBuildStatus
+          InstallPlan.execute jobControl
+                              keepGoing
+                              (DependentFailed . packageId)
+                              installPlan
+            $ \pkg ->
+                handle (return . Left)
+                  $ fmap Right
+                  $ --TODO: review exception handling
+                    let ipkgid              = installedPackageId pkg
+                        Just pkgBuildStatus = Map.lookup ipkgid pkgsBuildStatus
+                                                     in  rebuildTarget verbosity
+                                                                       distDirLayout
+                                                                       buildSettings
+                                                                       downloadMap
+                                                                       registerLock
+                                                                       cacheLock
+                                                                       sharedPackageConfig
+                                                                       pkg
+                                                                       pkgBuildStatus
   where
     isParallelBuild = buildSettingNumJobs >= 2
     keepGoing       = buildSettingKeepGoing
-    withRepoCtx     = projectConfigWithBuilderRepoContext verbosity 
-                        buildSettings
+    withRepoCtx = projectConfigWithBuilderRepoContext verbosity buildSettings
     packageDBsToUse = -- all the package dbs we may need to create
-      (Set.toList . Set.fromList)
-        [ pkgdb
-        | InstallPlan.Configured pkg <- InstallPlan.toList installPlan
-        , (pkgdb:_) <- map reverse [ pkgBuildPackageDBStack pkg,
-                                     pkgRegisterPackageDBStack pkg,
-                                     pkgSetupPackageDBStack pkg ]
-        ]
+                      (Set.toList . Set.fromList)
+      [ pkgdb
+      | InstallPlan.Configured pkg <- InstallPlan.toList installPlan
+      , (pkgdb:_)                  <- map reverse
+                                          [ pkgBuildPackageDBStack pkg
+                                          , pkgRegisterPackageDBStack pkg
+                                          , pkgSetupPackageDBStack pkg
+                                          ]
+      ]
 
 -- | Given all the context and resources, (re)build an individual package.
 --
-rebuildTarget :: Verbosity
-              -> DistDirLayout
-              -> BuildTimeSettings
-              -> AsyncFetchMap
-              -> Lock -> Lock
-              -> ElaboratedSharedConfig
-              -> ElaboratedReadyPackage
-              -> BuildStatus
-              -> IO BuildSuccess
-rebuildTarget verbosity
-              distDirLayout@DistDirLayout{distBuildDirectory}
-              buildSettings downloadMap
-              registerLock cacheLock
-              sharedPackageConfig
-              rpkg@(ReadyPackage pkg)
-              pkgBuildStatus =
+rebuildTarget
+  :: Verbosity
+  -> DistDirLayout
+  -> BuildTimeSettings
+  -> AsyncFetchMap
+  -> Lock
+  -> Lock
+  -> ElaboratedSharedConfig
+  -> ElaboratedReadyPackage
+  -> BuildStatus
+  -> IO BuildSuccess
+rebuildTarget verbosity distDirLayout@DistDirLayout { distBuildDirectory } buildSettings downloadMap registerLock cacheLock sharedPackageConfig rpkg@(ReadyPackage pkg) pkgBuildStatus
+  =
 
     -- We rely on the 'BuildStatus' to decide which phase to start from:
     case pkgBuildStatus of
-      BuildStatusDownload              -> downloadPhase
-      BuildStatusUnpack tarball        -> unpackTarballPhase tarball
-      BuildStatusRebuild srcdir status -> rebuildPhase status srcdir
+    BuildStatusDownload              -> downloadPhase
+    BuildStatusUnpack tarball        -> unpackTarballPhase tarball
+    BuildStatusRebuild srcdir status -> rebuildPhase status srcdir
 
-      -- TODO: perhaps re-nest the types to make these impossible
-      BuildStatusPreExisting {} -> unexpectedState
-      BuildStatusUpToDate    {} -> unexpectedState
+    -- TODO: perhaps re-nest the types to make these impossible
+    BuildStatusPreExisting{}         -> unexpectedState
+    BuildStatusUpToDate{}            -> unexpectedState
   where
     unexpectedState = error "rebuildTarget: unexpected package status"
 
-    downloadPhase = do
-        downsrcloc <- annotateFailure DownloadFailed $
-                        waitAsyncPackageDownload verbosity downloadMap pkg
-        case downsrcloc of
-          DownloadedTarball tarball -> unpackTarballPhase tarball
+    downloadPhase   = do
+      downsrcloc <- annotateFailure DownloadFailed
+        $ waitAsyncPackageDownload verbosity downloadMap pkg
+      case downsrcloc of
+        DownloadedTarball tarball -> unpackTarballPhase tarball
           --TODO: [nice to have] git/darcs repos etc
 
 
     unpackTarballPhase tarball =
-        withTarballLocalDirectory
-          verbosity distDirLayout tarball
-          (packageId pkg) (pkgBuildStyle pkg)
-          (pkgDescriptionOverride pkg) $
-
-          case pkgBuildStyle pkg of
+      withTarballLocalDirectory verbosity
+                                distDirLayout
+                                tarball
+                                (packageId pkg)
+                                (pkgBuildStyle pkg)
+                                (pkgDescriptionOverride pkg)
+        $ case pkgBuildStyle pkg of
             BuildAndInstall  -> buildAndInstall
             BuildInplaceOnly -> buildInplace buildStatus
               where
@@ -697,32 +691,38 @@ rebuildTarget verbosity
     -- would only start from download or unpack phases.
     --
     rebuildPhase buildStatus srcdir =
-        assert (pkgBuildStyle pkg == BuildInplaceOnly) $
-
-          buildInplace buildStatus srcdir builddir
+      assert (pkgBuildStyle pkg == BuildInplaceOnly)
+        $ buildInplace buildStatus srcdir builddir
       where
         builddir = distBuildDirectory (packageId pkg)
 
-    buildAndInstall srcdir builddir =
-        buildAndInstallUnpackedPackage
-          verbosity distDirLayout
-          buildSettings registerLock cacheLock
-          sharedPackageConfig
-          rpkg
-          srcdir builddir'
+    buildAndInstall srcdir builddir = buildAndInstallUnpackedPackage
+      verbosity
+      distDirLayout
+      buildSettings
+      registerLock
+      cacheLock
+      sharedPackageConfig
+      rpkg
+      srcdir
+      builddir'
       where
         builddir' = makeRelative srcdir builddir
         --TODO: [nice to have] ^^ do this relative stuff better
 
     buildInplace buildStatus srcdir builddir =
         --TODO: [nice to have] use a relative build dir rather than absolute
-        buildInplaceUnpackedPackage
-          verbosity distDirLayout
-          buildSettings registerLock cacheLock
-          sharedPackageConfig
-          rpkg
-          buildStatus
-          srcdir builddir
+                                               buildInplaceUnpackedPackage
+      verbosity
+      distDirLayout
+      buildSettings
+      registerLock
+      cacheLock
+      sharedPackageConfig
+      rpkg
+      buildStatus
+      srcdir
+      builddir
 
 --TODO: [nice to have] do we need to use a with-style for the temp files for downloading http
 -- packages, or are we going to cache them persistently?
@@ -736,52 +736,53 @@ rebuildTarget verbosity
 -- location) to a completion var for that package. So the body action should
 -- lookup the location and use 'waitAsyncPackageDownload' to get the result.
 --
-asyncDownloadPackages :: Verbosity
-                      -> ((RepoContext -> IO a) -> IO a)
-                      -> ElaboratedInstallPlan
-                      -> BuildStatusMap
-                      -> (AsyncFetchMap -> IO a)
-                      -> IO a
+asyncDownloadPackages
+  :: Verbosity
+  -> ((RepoContext -> IO a) -> IO a)
+  -> ElaboratedInstallPlan
+  -> BuildStatusMap
+  -> (AsyncFetchMap -> IO a)
+  -> IO a
 asyncDownloadPackages verbosity withRepoCtx installPlan pkgsBuildStatus body
-  | null pkgsToDownload = body Map.empty
-  | otherwise           = withRepoCtx $ \repoctx ->
-                            asyncFetchPackages verbosity repoctx
-                                               pkgsToDownload body
+  | null pkgsToDownload
+  = body Map.empty
+  | otherwise
+  = withRepoCtx
+  $ \repoctx -> asyncFetchPackages verbosity repoctx pkgsToDownload body
   where
-    pkgsToDownload = 
-      [ pkgSourceLocation pkg
-      | InstallPlan.Configured pkg
-         <- InstallPlan.reverseTopologicalOrder installPlan
-      , let ipkgid = installedPackageId pkg
-            Just pkgBuildStatus = Map.lookup ipkgid pkgsBuildStatus
-      , BuildStatusDownload <- [pkgBuildStatus]
-      ]
+    pkgsToDownload
+      = [ pkgSourceLocation pkg
+        | InstallPlan.Configured pkg <- InstallPlan.reverseTopologicalOrder
+          installPlan
+        , let ipkgid              = installedPackageId pkg
+              Just pkgBuildStatus = Map.lookup ipkgid pkgsBuildStatus
+        , BuildStatusDownload <- [pkgBuildStatus]
+        ]
 
 
 -- | Check if a package needs downloading, and if so expect to find a download
 -- in progress in the given 'AsyncFetchMap' and wait on it to finish.
 --
-waitAsyncPackageDownload :: Verbosity
-                         -> AsyncFetchMap
-                         -> ElaboratedConfiguredPackage
-                         -> IO DownloadedSourceLocation
+waitAsyncPackageDownload
+  :: Verbosity
+  -> AsyncFetchMap
+  -> ElaboratedConfiguredPackage
+  -> IO DownloadedSourceLocation
 waitAsyncPackageDownload verbosity downloadMap pkg = do
-    pkgloc <- waitAsyncFetchPackage verbosity downloadMap
-                                    (pkgSourceLocation pkg)
-    case downloadedSourceLocation pkgloc of
-      Just loc -> return loc
-      Nothing  -> fail "waitAsyncPackageDownload: unexpected source location"
+  pkgloc <- waitAsyncFetchPackage verbosity downloadMap (pkgSourceLocation pkg)
+  case downloadedSourceLocation pkgloc of
+    Just loc -> return loc
+    Nothing  -> fail "waitAsyncPackageDownload: unexpected source location"
 
 data DownloadedSourceLocation = DownloadedTarball FilePath
                               --TODO: [nice to have] git/darcs repos etc
 
-downloadedSourceLocation :: PackageLocation FilePath
-                         -> Maybe DownloadedSourceLocation
-downloadedSourceLocation pkgloc =
-    case pkgloc of
-      RemoteTarballPackage _ tarball -> Just (DownloadedTarball tarball)
-      RepoTarballPackage _ _ tarball -> Just (DownloadedTarball tarball)
-      _                              -> Nothing
+downloadedSourceLocation
+  :: PackageLocation FilePath -> Maybe DownloadedSourceLocation
+downloadedSourceLocation pkgloc = case pkgloc of
+  RemoteTarballPackage _ tarball -> Just (DownloadedTarball tarball)
+  RepoTarballPackage _ _ tarball -> Just (DownloadedTarball tarball)
+  _                              -> Nothing
 
 
 
@@ -798,69 +799,73 @@ withTarballLocalDirectory
   -> Maybe CabalFileText
   -> (FilePath -> FilePath -> IO a)
   -> IO a
-withTarballLocalDirectory verbosity distDirLayout@DistDirLayout{..}
-                          tarball pkgid buildstyle pkgTextOverride
-                          buildPkg  =
-      case buildstyle of
+withTarballLocalDirectory verbosity distDirLayout@DistDirLayout {..} tarball pkgid buildstyle pkgTextOverride buildPkg
+  = case buildstyle of
         -- In this case we make a temp dir, unpack the tarball to there and
         -- build and install it from that temp dir.
-        BuildAndInstall ->
-          withTempDirectory verbosity distTempDirectory
-                            (display (packageName pkgid)) $ \tmpdir -> do
-            unpackPackageTarball verbosity tarball tmpdir
-                                 pkgid pkgTextOverride
+    BuildAndInstall ->
+      withTempDirectory verbosity
+                        distTempDirectory
+                        (display (packageName pkgid))
+        $ \tmpdir -> do
+            unpackPackageTarball verbosity tarball tmpdir pkgid pkgTextOverride
             let srcdir   = tmpdir </> display pkgid
                 builddir = srcdir </> "dist"
             buildPkg srcdir builddir
 
-        -- In this case we make sure the tarball has been unpacked to the
-        -- appropriate location under the shared dist dir, and then build it
-        -- inplace there
-        BuildInplaceOnly -> do
-          let srcrootdir = distUnpackedSrcRootDirectory
-              srcdir     = distUnpackedSrcDirectory pkgid
-              builddir   = distBuildDirectory pkgid
-          -- TODO: [nice to have] use a proper file monitor rather than this dir exists test
-          exists <- doesDirectoryExist srcdir
-          unless exists $ do
-            createDirectoryIfMissingVerbose verbosity False srcrootdir
-            unpackPackageTarball verbosity tarball srcrootdir
-                                 pkgid pkgTextOverride
-            moveTarballShippedDistDirectory verbosity distDirLayout
-                                            srcrootdir pkgid
-          buildPkg srcdir builddir
+    -- In this case we make sure the tarball has been unpacked to the
+    -- appropriate location under the shared dist dir, and then build it
+    -- inplace there
+    BuildInplaceOnly -> do
+      let srcrootdir = distUnpackedSrcRootDirectory
+          srcdir     = distUnpackedSrcDirectory pkgid
+          builddir   = distBuildDirectory pkgid
+      -- TODO: [nice to have] use a proper file monitor rather than this dir exists test
+      exists <- doesDirectoryExist srcdir
+      unless exists $ do
+        createDirectoryIfMissingVerbose verbosity False srcrootdir
+        unpackPackageTarball verbosity tarball srcrootdir pkgid pkgTextOverride
+        moveTarballShippedDistDirectory verbosity distDirLayout srcrootdir pkgid
+      buildPkg srcdir builddir
 
 
-unpackPackageTarball :: Verbosity -> FilePath -> FilePath
-                     -> PackageId -> Maybe CabalFileText
-                     -> IO ()
+unpackPackageTarball
+  :: Verbosity
+  -> FilePath
+  -> FilePath
+  -> PackageId
+  -> Maybe CabalFileText
+  -> IO ()
 unpackPackageTarball verbosity tarball parentdir pkgid pkgTextOverride =
     --TODO: [nice to have] switch to tar package and catch tar exceptions
-    annotateFailure UnpackFailed $ do
+  annotateFailure UnpackFailed $ do
 
       -- Unpack the tarball
       --
-      info verbosity $ "Extracting " ++ tarball ++ " to " ++ parentdir ++ "..."
-      Tar.extractTarGzFile parentdir pkgsubdir tarball
+    info verbosity $ "Extracting " ++ tarball ++ " to " ++ parentdir ++ "..."
+    Tar.extractTarGzFile parentdir pkgsubdir tarball
 
-      -- Sanity check
-      --
-      exists <- doesFileExist cabalFile
-      when (not exists) $
-        die $ "Package .cabal file not found in the tarball: " ++ cabalFile
+    -- Sanity check
+    --
+    exists <- doesFileExist cabalFile
+    when (not exists)
+      $  die
+      $  "Package .cabal file not found in the tarball: "
+      ++ cabalFile
 
-      -- Overwrite the .cabal with the one from the index, when appropriate
-      --
-      case pkgTextOverride of
-        Nothing     -> return ()
-        Just pkgtxt -> do
-          info verbosity $ "Updating " ++ display pkgname <.> "cabal"
-                        ++ " with the latest revision from the index."
-          writeFileAtomic cabalFile pkgtxt
-
+    -- Overwrite the .cabal with the one from the index, when appropriate
+    --
+    case pkgTextOverride of
+      Nothing     -> return ()
+      Just pkgtxt -> do
+        info verbosity
+          $   "Updating "
+          ++  display pkgname
+          <.> "cabal"
+          ++  " with the latest revision from the index."
+        writeFileAtomic cabalFile pkgtxt
   where
-    cabalFile = parentdir </> pkgsubdir
-                          </> display pkgname <.> "cabal"
+    cabalFile = parentdir </> pkgsubdir </> display pkgname <.> "cabal"
     pkgsubdir = display pkgid
     pkgname   = packageName pkgid
 
@@ -872,14 +877,18 @@ unpackPackageTarball verbosity tarball parentdir pkgid pkgTextOverride =
 -- approach to shipped pre-procssed files ought to be replaced by a proper
 -- system, though we'll still need to keep this hack for older packages.
 --
-moveTarballShippedDistDirectory :: Verbosity -> DistDirLayout
-                                -> FilePath -> PackageId -> IO ()
-moveTarballShippedDistDirectory verbosity DistDirLayout{distBuildDirectory}
-                                parentdir pkgid = do
+moveTarballShippedDistDirectory
+  :: Verbosity -> DistDirLayout -> FilePath -> PackageId -> IO ()
+moveTarballShippedDistDirectory verbosity DistDirLayout { distBuildDirectory } parentdir pkgid
+  = do
     distDirExists <- doesDirectoryExist tarballDistDir
     when distDirExists $ do
-      debug verbosity $ "Moving '" ++ tarballDistDir ++ "' to '"
-                                   ++ targetDistDir ++ "'"
+      debug verbosity
+        $  "Moving '"
+        ++ tarballDistDir
+        ++ "' to '"
+        ++ targetDistDir
+        ++ "'"
       --TODO: [nice to have] or perhaps better to copy, and use a file monitor
       renameDirectory tarballDistDir targetDistDir
   where
@@ -887,27 +896,19 @@ moveTarballShippedDistDirectory verbosity DistDirLayout{distBuildDirectory}
     targetDistDir  = distBuildDirectory pkgid
 
 
-buildAndInstallUnpackedPackage :: Verbosity
-                               -> DistDirLayout
-                               -> BuildTimeSettings -> Lock -> Lock
-                               -> ElaboratedSharedConfig
-                               -> ElaboratedReadyPackage
-                               -> FilePath -> FilePath
-                               -> IO BuildSuccess
-buildAndInstallUnpackedPackage verbosity
-                               DistDirLayout{distTempDirectory}
-                               BuildTimeSettings {
-                                 buildSettingNumJobs,
-                                 buildSettingLogFile
-                               }
-                               registerLock cacheLock
-                               pkgshared@ElaboratedSharedConfig {
-                                 pkgConfigPlatform      = platform,
-                                 pkgConfigCompiler      = compiler,
-                                 pkgConfigCompilerProgs = progdb
-                               }
-                               rpkg@(ReadyPackage pkg)
-                               srcdir builddir = do
+buildAndInstallUnpackedPackage
+  :: Verbosity
+  -> DistDirLayout
+  -> BuildTimeSettings
+  -> Lock
+  -> Lock
+  -> ElaboratedSharedConfig
+  -> ElaboratedReadyPackage
+  -> FilePath
+  -> FilePath
+  -> IO BuildSuccess
+buildAndInstallUnpackedPackage verbosity DistDirLayout { distTempDirectory } BuildTimeSettings { buildSettingNumJobs, buildSettingLogFile } registerLock cacheLock pkgshared@ElaboratedSharedConfig { pkgConfigPlatform = platform, pkgConfigCompiler = compiler, pkgConfigCompilerProgs = progdb } rpkg@(ReadyPackage pkg) srcdir builddir
+  = do
 
     createDirectoryIfMissingVerbose verbosity False builddir
     initLogFile
@@ -923,20 +924,23 @@ buildAndInstallUnpackedPackage verbosity
     --TODO: [required feature] sudo re-exec
 
     -- Configure phase
-    when isParallelBuild $
-      notice verbosity $ "Configuring " ++ display pkgid ++ "..."
-    annotateFailure ConfigureFailed $
-      setup configureCommand configureFlags
+    when isParallelBuild
+      $  notice verbosity
+      $  "Configuring "
+      ++ display pkgid
+      ++ "..."
+    annotateFailure ConfigureFailed $ setup configureCommand configureFlags
 
     -- Build phase
-    when isParallelBuild $
-      notice verbosity $ "Building " ++ display pkgid ++ "..."
-    annotateFailure BuildFailed $
-      setup buildCommand buildFlags
+    when isParallelBuild
+      $  notice verbosity
+      $  "Building "
+      ++ display pkgid
+      ++ "..."
+    annotateFailure BuildFailed $ setup buildCommand buildFlags
 
     -- Install phase
-    ipkgs <-
-      annotateFailure InstallFailed $ do
+    ipkgs <- annotateFailure InstallFailed $ do
       --TODO: [required eventually] need to lock installing this ipkig so other processes don't
       -- stomp on our files, since we don't have ABI compat, not safe to replace
 
@@ -946,10 +950,10 @@ buildAndInstallUnpackedPackage verbosity
 
       -- Actual installation
       setup Cabal.copyCommand copyFlags
-      
+
       LBS.writeFile
-        (InstallDirs.prefix (pkgInstallDirs pkg) </> "cabal-hash.txt") $
-        (renderPackageHashInputs (packageHashInputs pkgshared pkg))
+          (InstallDirs.prefix (pkgInstallDirs pkg) </> "cabal-hash.txt")
+        $ (renderPackageHashInputs (packageHashInputs pkgshared pkg))
 
       -- here's where we could keep track of the installed files ourselves if
       -- we wanted by calling copy to an image dir and then we would make a
@@ -969,20 +973,27 @@ buildAndInstallUnpackedPackage verbosity
           -- See Note [Updating installedUnitId]
           let ipkgs' = case ipkgs of
                           -- Case A and B
-                          [ipkg] -> [ipkg { Installed.installedUnitId = ipkgid }]
-                          -- Case C
-                          _      -> ipkgs
-          unless (any ((== ipkgid) . Installed.installedUnitId) ipkgs') $
-            die $ "the package " ++ display (packageId pkg) ++ " was expected "
-               ++ " to produce registeration info for the unit Id "
-               ++ display ipkgid ++ " but it actually produced info for "
-               ++ intercalate ", "
-                    (map (display . Installed.installedUnitId) ipkgs')
-          criticalSection registerLock $
-            forM_ ipkgs' $ \ipkg' ->
-              Cabal.registerPackage verbosity compiler progdb
-                                    HcPkg.MultiInstance
-                                    (pkgRegisterPackageDBStack pkg) ipkg'
+                [ipkg] -> [ipkg { Installed.installedUnitId = ipkgid }]
+                -- Case C
+                _      -> ipkgs
+          unless (any ((==ipkgid) . Installed.installedUnitId) ipkgs')
+            $  die
+            $  "the package "
+            ++ display (packageId pkg)
+            ++ " was expected "
+            ++ " to produce registeration info for the unit Id "
+            ++ display ipkgid
+            ++ " but it actually produced info for "
+            ++ intercalate ", "
+                           (map (display . Installed.installedUnitId) ipkgs')
+          criticalSection registerLock
+            $ forM_ ipkgs'
+            $ \ipkg' -> Cabal.registerPackage verbosity
+                                              compiler
+                                              progdb
+                                              HcPkg.MultiInstance
+                                              (pkgRegisterPackageDBStack pkg)
+                                              ipkg'
           return ipkgs'
         else return []
 
@@ -991,212 +1002,210 @@ buildAndInstallUnpackedPackage verbosity
         testsResult = TestsNotTried
 
     return (BuildOk docsResult testsResult ipkgs)
-
   where
-    pkgid  = packageId rpkg
-    ipkgid = installedPackageId rpkg
+    pkgid            = packageId rpkg
+    ipkgid           = installedPackageId rpkg
 
-    isParallelBuild = buildSettingNumJobs >= 2
+    isParallelBuild  = buildSettingNumJobs >= 2
 
     configureCommand = Cabal.configureCommand defaultProgramConfiguration
-    configureFlags v = flip filterConfigureFlags v $
-                       setupHsConfigureFlags rpkg pkgshared
-                                             verbosity builddir
+    configureFlags v = flip filterConfigureFlags v
+      $ setupHsConfigureFlags rpkg pkgshared verbosity builddir
 
-    buildCommand     = Cabal.buildCommand defaultProgramConfiguration
-    buildFlags   _   = setupHsBuildFlags pkg pkgshared verbosity builddir
+    buildCommand = Cabal.buildCommand defaultProgramConfiguration
+    buildFlags _ = setupHsBuildFlags pkg pkgshared verbosity builddir
 
     generateInstalledPackageInfos :: IO [InstalledPackageInfo]
     generateInstalledPackageInfos =
-      withTempInstalledPackageInfoFiles
-        verbosity distTempDirectory $ \pkgConfDest -> do
-        let registerFlags _ = setupHsRegisterFlags
-                                pkg pkgshared
-                                verbosity builddir
-                                pkgConfDest
-        setup Cabal.registerCommand registerFlags
+      withTempInstalledPackageInfoFiles verbosity distTempDirectory
+        $ \pkgConfDest -> do
+            let registerFlags _ = setupHsRegisterFlags pkg
+                                                       pkgshared
+                                                       verbosity
+                                                       builddir
+                                                       pkgConfDest
+            setup Cabal.registerCommand registerFlags
 
     copyFlags _ = setupHsCopyFlags pkg pkgshared verbosity builddir
 
-    scriptOptions = setupHsScriptOptions rpkg pkgshared srcdir builddir
-                                         isParallelBuild cacheLock
+    scriptOptions = setupHsScriptOptions rpkg
+                                         pkgshared
+                                         srcdir
+                                         builddir
+                                         isParallelBuild
+                                         cacheLock
 
     setup :: CommandUI flags -> (Version -> flags) -> IO ()
-    setup cmd flags =
-      withLogging $ \mLogFileHandle -> 
-        setupWrapper
-          verbosity
-          scriptOptions { useLoggingHandle = mLogFileHandle }
-          (Just (pkgDescription pkg))
-          cmd flags []
+    setup cmd flags = withLogging $ \mLogFileHandle -> setupWrapper
+      verbosity
+      scriptOptions { useLoggingHandle = mLogFileHandle }
+      (Just (pkgDescription pkg))
+      cmd
+      flags
+      []
 
-    mlogFile =
-      case buildSettingLogFile of
-        Nothing        -> Nothing
-        Just mkLogFile -> Just (mkLogFile compiler platform pkgid ipkgid)
+    mlogFile    = case buildSettingLogFile of
+      Nothing        -> Nothing
+      Just mkLogFile -> Just (mkLogFile compiler platform pkgid ipkgid)
 
-    initLogFile =
-      case mlogFile of
-        Nothing      -> return ()
-        Just logFile -> do
-          createDirectoryIfMissing True (takeDirectory logFile)
-          exists <- doesFileExist logFile
-          when exists $ removeFile logFile
+    initLogFile = case mlogFile of
+      Nothing      -> return ()
+      Just logFile -> do
+        createDirectoryIfMissing True (takeDirectory logFile)
+        exists <- doesFileExist logFile
+        when exists $ removeFile logFile
 
-    withLogging action =
-      case mlogFile of
-        Nothing      -> action Nothing
-        Just logFile -> withFile logFile AppendMode (action . Just)
+    withLogging action = case mlogFile of
+      Nothing      -> action Nothing
+      Just logFile -> withFile logFile AppendMode (action . Just)
 
 
-buildInplaceUnpackedPackage :: Verbosity
-                            -> DistDirLayout
-                            -> BuildTimeSettings -> Lock -> Lock
-                            -> ElaboratedSharedConfig
-                            -> ElaboratedReadyPackage
-                            -> BuildStatusRebuild
-                            -> FilePath -> FilePath
-                            -> IO BuildSuccess
-buildInplaceUnpackedPackage verbosity
-                            distDirLayout@DistDirLayout {
-                              distTempDirectory,
-                              distPackageCacheDirectory
-                            }
-                            BuildTimeSettings{buildSettingNumJobs}
-                            registerLock cacheLock
-                            pkgshared@ElaboratedSharedConfig {
-                              pkgConfigCompiler      = compiler,
-                              pkgConfigCompilerProgs = progdb
-                            }
-                            rpkg@(ReadyPackage pkg)
-                            buildStatus
-                            srcdir builddir = do
+buildInplaceUnpackedPackage
+  :: Verbosity
+  -> DistDirLayout
+  -> BuildTimeSettings
+  -> Lock
+  -> Lock
+  -> ElaboratedSharedConfig
+  -> ElaboratedReadyPackage
+  -> BuildStatusRebuild
+  -> FilePath
+  -> FilePath
+  -> IO BuildSuccess
+buildInplaceUnpackedPackage verbosity distDirLayout@DistDirLayout { distTempDirectory, distPackageCacheDirectory } BuildTimeSettings { buildSettingNumJobs } registerLock cacheLock pkgshared@ElaboratedSharedConfig { pkgConfigCompiler = compiler, pkgConfigCompilerProgs = progdb } rpkg@(ReadyPackage pkg) buildStatus srcdir builddir
+  = do
 
         --TODO: [code cleanup] there is duplication between the distdirlayout and the builddir here
         --      builddir is not enough, we also need the per-package cachedir
-        createDirectoryIfMissingVerbose verbosity False builddir
-        createDirectoryIfMissingVerbose verbosity False (distPackageCacheDirectory pkgid)
+    createDirectoryIfMissingVerbose verbosity False builddir
+    createDirectoryIfMissingVerbose verbosity
+                                    False
+                                    (distPackageCacheDirectory pkgid)
 
-        -- Configure phase
-        --
-        whenReConfigure $ do
-          annotateFailure ConfigureFailed $
-            setup configureCommand configureFlags []
-          invalidatePackageRegFileMonitor packageFileMonitor
-          updatePackageConfigFileMonitor packageFileMonitor srcdir pkg
+    -- Configure phase
+    --
+    whenReConfigure $ do
+      annotateFailure ConfigureFailed $ setup configureCommand configureFlags []
+      invalidatePackageRegFileMonitor packageFileMonitor
+      updatePackageConfigFileMonitor packageFileMonitor srcdir pkg
 
-        -- Build phase
-        --
-        let docsResult  = DocsNotTried
-            testsResult = TestsNotTried
+    -- Build phase
+    --
+    let docsResult  = DocsNotTried
+        testsResult = TestsNotTried
 
-            buildSuccess :: BuildSuccessMisc
-            buildSuccess = (docsResult, testsResult)
+        buildSuccess :: BuildSuccessMisc
+        buildSuccess = (docsResult, testsResult)
 
-        whenRebuild $ do
-          timestamp <- beginUpdateFileMonitor
-          annotateFailure BuildFailed $
-            setup buildCommand buildFlags buildArgs
+    whenRebuild $ do
+      timestamp <- beginUpdateFileMonitor
+      annotateFailure BuildFailed $ setup buildCommand buildFlags buildArgs
 
-          --TODO: [required eventually] this doesn't track file
-          --non-existence, so we could fail to rebuild if someone
-          --adds a new file which changes behavior.
-          allSrcFiles <- allPackageSourceFiles verbosity scriptOptions srcdir
+      --TODO: [required eventually] this doesn't track file
+      --non-existence, so we could fail to rebuild if someone
+      --adds a new file which changes behavior.
+      allSrcFiles <- allPackageSourceFiles verbosity scriptOptions srcdir
 
-          updatePackageBuildFileMonitor packageFileMonitor srcdir timestamp
-                                        pkg buildStatus
-                                        allSrcFiles buildSuccess
+      updatePackageBuildFileMonitor packageFileMonitor
+                                    srcdir
+                                    timestamp
+                                    pkg
+                                    buildStatus
+                                    allSrcFiles
+                                    buildSuccess
 
-        ipkgs <- whenReRegister $ annotateFailure InstallFailed $ do
-          -- Register locally
-          ipkgs <- if pkgRequiresRegistration pkg
-            then do
-                ipkgs <- generateInstalledPackageInfos
-                -- We register ourselves rather than via Setup.hs. We need to
-                -- grab and modify the InstalledPackageInfo. We decide what
-                -- the installed package id is, not the build system.
+    ipkgs <- whenReRegister $ annotateFailure InstallFailed $ do
+      -- Register locally
+      ipkgs <- if pkgRequiresRegistration pkg
+        then do
+          ipkgs <- generateInstalledPackageInfos
+          -- We register ourselves rather than via Setup.hs. We need to
+          -- grab and modify the InstalledPackageInfo. We decide what
+          -- the installed package id is, not the build system.
 
-                -- Note [Updating installedUnitId]
-                -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-                -- This is a bit tricky.  There are three variables we
-                -- care about:
-                --
-                --      1. Does the Setup script we're interfacing with
-                --         support --ipid?  (Only if version >= 1.23)
-                --         If not, we have to explicitly update the
-                --         the UID that was recorded.
-                --
-                --      2. Does the Setup script we're interfacing with
-                --         support internal libraries?  (Only if
-                --         version >= 1.25).  If so, there may be
-                --         multiple IPIs... and it would be wrong to
-                --         update them all to the same UID (you need
-                --         to generate derived UIDs for each
-                --         subcomponent.)
-                --
-                --      3. Does GHC require that the IPID be input at
-                --         configure time?  (Only if GHC >= 8.0, which
-                --         also implies Cabal version >= 1.23, as earlier
-                --         Cabal's don't know how to do this properly).
-                --         If so, it is IMPERMISSIBLE to update the
-                --         UID that was recorded.
-                --
-                -- This means that there are three situations:
-                --
-                --   A. Cabal  < 1.23
-                --   B. Cabal >= 1.23 && < 1.25
-                --   C. Cabal >= 1.25
-                --
-                -- We consider each in turn:
-                --
-                --      A. There is only ever one IPI, and we must
-                --         update it.
-                --
-                --      B. There is only ever one IPI, but because
-                --         --ipid is supported, the installedUnitId of
-                --         this IPI is ipkgid (so it's harmless to
-                --         overwrite).
-                --
-                --      C. There may be multiple IPIs, but because
-                --         --ipid is supported they always have the
-                --         right installedUnitIds.
-                --
-                let ipkgs' = case ipkgs of
-                                -- Case A and B
-                                [ipkg] -> [ipkg { Installed.installedUnitId = ipkgid }]
-                                -- Case C
-                                _      -> assert (any ((== ipkgid) . Installed.installedUnitId)
-                                                      ipkgs) ipkgs
-                criticalSection registerLock $
-                  forM_ ipkgs' $ \ipkg' ->
-                    Cabal.registerPackage verbosity compiler progdb HcPkg.NoMultiInstance
-                                          (pkgRegisterPackageDBStack pkg)
-                                          ipkg'
-                return ipkgs'
+          -- Note [Updating installedUnitId]
+          -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+          -- This is a bit tricky.  There are three variables we
+          -- care about:
+          --
+          --      1. Does the Setup script we're interfacing with
+          --         support --ipid?  (Only if version >= 1.23)
+          --         If not, we have to explicitly update the
+          --         the UID that was recorded.
+          --
+          --      2. Does the Setup script we're interfacing with
+          --         support internal libraries?  (Only if
+          --         version >= 1.25).  If so, there may be
+          --         multiple IPIs... and it would be wrong to
+          --         update them all to the same UID (you need
+          --         to generate derived UIDs for each
+          --         subcomponent.)
+          --
+          --      3. Does GHC require that the IPID be input at
+          --         configure time?  (Only if GHC >= 8.0, which
+          --         also implies Cabal version >= 1.23, as earlier
+          --         Cabal's don't know how to do this properly).
+          --         If so, it is IMPERMISSIBLE to update the
+          --         UID that was recorded.
+          --
+          -- This means that there are three situations:
+          --
+          --   A. Cabal  < 1.23
+          --   B. Cabal >= 1.23 && < 1.25
+          --   C. Cabal >= 1.25
+          --
+          -- We consider each in turn:
+          --
+          --      A. There is only ever one IPI, and we must
+          --         update it.
+          --
+          --      B. There is only ever one IPI, but because
+          --         --ipid is supported, the installedUnitId of
+          --         this IPI is ipkgid (so it's harmless to
+          --         overwrite).
+          --
+          --      C. There may be multiple IPIs, but because
+          --         --ipid is supported they always have the
+          --         right installedUnitIds.
+          --
+          let
+            ipkgs' = case ipkgs of
+                        -- Case A and B
+              [ipkg] -> [ipkg { Installed.installedUnitId = ipkgid }]
+              -- Case C
+              _ -> assert (any ((==ipkgid) . Installed.installedUnitId) ipkgs)
+                          ipkgs
+          criticalSection registerLock
+            $ forM_ ipkgs'
+            $ \ipkg' -> Cabal.registerPackage verbosity
+                                              compiler
+                                              progdb
+                                              HcPkg.NoMultiInstance
+                                              (pkgRegisterPackageDBStack pkg)
+                                              ipkg'
+          return ipkgs'
+        else return []
 
-           else return []
+      updatePackageRegFileMonitor packageFileMonitor srcdir ipkgs
+      return ipkgs
 
-          updatePackageRegFileMonitor packageFileMonitor srcdir ipkgs
-          return ipkgs
+    -- Repl phase
+    --
+    whenRepl $ annotateFailure BuildFailed $ setup replCommand
+                                                   replFlags
+                                                   replArgs
 
-        -- Repl phase
-        --
-        whenRepl $
-          annotateFailure BuildFailed $
-          setup replCommand replFlags replArgs
+    -- Haddock phase
+    whenHaddock $ annotateFailure BuildFailed $ setup haddockCommand
+                                                      haddockFlags
+                                                      []
 
-        -- Haddock phase
-        whenHaddock $
-          annotateFailure BuildFailed $
-          setup haddockCommand haddockFlags []
-
-        return (BuildOk docsResult testsResult ipkgs)
-
+    return (BuildOk docsResult testsResult ipkgs)
   where
-    pkgid  = packageId rpkg
-    ipkgid = installedPackageId rpkg
+    pkgid              = packageId rpkg
+    ipkgid             = installedPackageId rpkg
 
-    isParallelBuild = buildSettingNumJobs >= 2
+    isParallelBuild    = buildSettingNumJobs >= 2
 
     packageFileMonitor = newPackageFileMonitor distDirLayout pkgid
 
@@ -1205,116 +1214,131 @@ buildInplaceUnpackedPackage verbosity
       _                      -> return ()
 
     whenRebuild action
-      | null (pkgBuildTargets pkg) = return ()
-      | otherwise                  = action
+      | null (pkgBuildTargets pkg)
+      = return ()
+      | otherwise
+      = action
 
-    whenRepl action
-      | isNothing (pkgReplTarget pkg) = return ()
-      | otherwise                     = action
+    whenRepl    action
+      | isNothing (pkgReplTarget pkg)
+      = return ()
+      | otherwise
+      = action
 
     whenHaddock action
-      | pkgBuildHaddocks pkg = action
-      | otherwise            = return ()
+      | pkgBuildHaddocks pkg
+      = action
+      | otherwise
+      = return ()
 
-    whenReRegister  action = case buildStatus of
-      BuildStatusConfigure          _ -> action
+    whenReRegister action = case buildStatus of
+      BuildStatusConfigure _          -> action
       BuildStatusBuild Nothing      _ -> action
       BuildStatusBuild (Just ipkgs) _ -> return ipkgs
 
     configureCommand = Cabal.configureCommand defaultProgramConfiguration
-    configureFlags v = flip filterConfigureFlags v $
-                       setupHsConfigureFlags rpkg pkgshared
-                                             verbosity builddir
+    configureFlags v = flip filterConfigureFlags v
+      $ setupHsConfigureFlags rpkg pkgshared verbosity builddir
 
-    buildCommand     = Cabal.buildCommand defaultProgramConfiguration
-    buildFlags   _   = setupHsBuildFlags pkg pkgshared
-                                         verbosity builddir
-    buildArgs        = setupHsBuildArgs  pkg
+    buildCommand = Cabal.buildCommand defaultProgramConfiguration
+    buildFlags _ = setupHsBuildFlags pkg pkgshared verbosity builddir
+    buildArgs   = setupHsBuildArgs pkg
 
-    replCommand      = Cabal.replCommand defaultProgramConfiguration
-    replFlags _      = setupHsReplFlags pkg pkgshared
-                                        verbosity builddir
-    replArgs         = setupHsReplArgs  pkg
+    replCommand = Cabal.replCommand defaultProgramConfiguration
+    replFlags _ = setupHsReplFlags pkg pkgshared verbosity builddir
+    replArgs       = setupHsReplArgs pkg
 
-    haddockCommand   = Cabal.haddockCommand
-    haddockFlags _   = setupHsHaddockFlags pkg pkgshared
-                                           verbosity builddir
+    haddockCommand = Cabal.haddockCommand
+    haddockFlags _ = setupHsHaddockFlags pkg pkgshared verbosity builddir
 
-    scriptOptions    = setupHsScriptOptions rpkg pkgshared
-                                            srcdir builddir
-                                            isParallelBuild cacheLock
+    scriptOptions = setupHsScriptOptions rpkg
+                                         pkgshared
+                                         srcdir
+                                         builddir
+                                         isParallelBuild
+                                         cacheLock
 
     setup :: CommandUI flags -> (Version -> flags) -> [String] -> IO ()
     setup cmd flags args =
       setupWrapper verbosity
                    scriptOptions
                    (Just (pkgDescription pkg))
-                   cmd flags args
+                   cmd
+                   flags
+                   args
 
     generateInstalledPackageInfos :: IO [InstalledPackageInfo]
     generateInstalledPackageInfos =
-      withTempInstalledPackageInfoFiles
-        verbosity distTempDirectory $ \pkgConfDest -> do
-        let registerFlags _ = setupHsRegisterFlags
-                                pkg pkgshared
-                                verbosity builddir
-                                pkgConfDest
-        setup Cabal.registerCommand registerFlags []
+      withTempInstalledPackageInfoFiles verbosity distTempDirectory
+        $ \pkgConfDest -> do
+            let registerFlags _ = setupHsRegisterFlags pkg
+                                                       pkgshared
+                                                       verbosity
+                                                       builddir
+                                                       pkgConfDest
+            setup Cabal.registerCommand registerFlags []
 
 
 -- helper
 annotateFailure :: (SomeException -> BuildFailure) -> IO a -> IO a
 annotateFailure annotate action =
-  action `catches`
+  action
+    `catches`
     -- It's not just IOException and ExitCode we have to deal with, there's
     -- lots, including exceptions from the hackage-security and tar packages.
     -- So we take the strategy of catching everything except async exceptions.
-    [
+              [
 #if MIN_VERSION_base(4,7,0)
-      Handler $ \async -> throwIO (async :: SomeAsyncException)
+                Handler $ \async -> throwIO (async :: SomeAsyncException)
 #else
       Handler $ \async -> throwIO (async :: AsyncException)
 #endif
-    , Handler $ \other -> handler (other :: SomeException)
-    ]
+              , Handler $ \other -> handler (other :: SomeException)
+              ]
   where
     handler :: Exception e => e -> IO a
     handler = throwIO . annotate . toException
 
 
-withTempInstalledPackageInfoFiles :: Verbosity -> FilePath
-                                  -> (FilePath -> IO ())
-                                  -> IO [InstalledPackageInfo]
+withTempInstalledPackageInfoFiles
+  :: Verbosity -> FilePath -> (FilePath -> IO ()) -> IO [InstalledPackageInfo]
 withTempInstalledPackageInfoFiles verbosity tempdir action =
-    withTempDirectory verbosity tempdir "package-registration-" $ \dir -> do
+  withTempDirectory verbosity tempdir "package-registration-" $ \dir -> do
       -- make absolute since @action@ will often change directory
-      abs_dir <- canonicalizePath dir
+    abs_dir <- canonicalizePath dir
 
-      let pkgConfDest = abs_dir </> "pkgConf"
-      action pkgConfDest
+    let pkgConfDest = abs_dir </> "pkgConf"
+    action pkgConfDest
 
-      is_dir <- doesDirectoryExist pkgConfDest
+    is_dir <- doesDirectoryExist pkgConfDest
 
-      let notHidden = not . isHidden
-          isHidden name = "." `isPrefixOf` name
-      if is_dir
-        then mapM (readPkgConf pkgConfDest) . sort . filter notHidden
-                =<< getDirectoryContents pkgConfDest
-        else fmap (:[]) $ readPkgConf "." pkgConfDest
+    let notHidden = not . isHidden
+        isHidden name = "." `isPrefixOf` name
+    if is_dir
+      then
+        mapM (readPkgConf pkgConfDest)
+          .   sort
+          .   filter notHidden
+          =<< getDirectoryContents pkgConfDest
+      else fmap (:[]) $ readPkgConf "." pkgConfDest
   where
     pkgConfParseFailed :: Installed.PError -> IO a
     pkgConfParseFailed perror =
-      die $ "Couldn't parse the output of 'setup register --gen-pkg-config':"
-            ++ show perror
+      die
+        $  "Couldn't parse the output of 'setup register --gen-pkg-config':"
+        ++ show perror
 
     readPkgConf pkgConfDir pkgConfFile = do
-      (warns, ipkg) <- withUTF8FileContents (pkgConfDir </> pkgConfFile) $ \pkgConfStr ->
-        case Installed.parseInstalledPackageInfo pkgConfStr of
-          Installed.ParseFailed perror -> pkgConfParseFailed perror
-          Installed.ParseOk warns ipkg -> return (warns, ipkg)
+      (warns, ipkg) <-
+        withUTF8FileContents (pkgConfDir </> pkgConfFile)
+          $ \pkgConfStr ->
+              case Installed.parseInstalledPackageInfo pkgConfStr of
+                Installed.ParseFailed perror -> pkgConfParseFailed perror
+                Installed.ParseOk warns ipkg -> return (warns, ipkg)
 
-      unless (null warns) $
-        warn verbosity $ unlines (map (showPWarning pkgConfFile) warns)
+      unless (null warns)
+        $ warn verbosity
+        $ unlines (map (showPWarning pkgConfFile) warns)
 
       return ipkg
 

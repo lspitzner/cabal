@@ -38,22 +38,24 @@ import Control.Monad (unless)
 -- For more details on how this works, see the module
 -- "Distribution.Client.ProjectOrchestration"
 --
-replAction :: (ConfigFlags, ConfigExFlags, InstallFlags, HaddockFlags)
-              -> [String] -> GlobalFlags -> IO ()
-replAction (configFlags, configExFlags, installFlags, haddockFlags)
-           targetStrings globalFlags = do
+replAction
+  :: (ConfigFlags, ConfigExFlags, InstallFlags, HaddockFlags)
+  -> [String]
+  -> GlobalFlags
+  -> IO ()
+replAction (configFlags, configExFlags, installFlags, haddockFlags) targetStrings globalFlags
+  = do
 
     userTargets <- readUserBuildTargets targetStrings
 
-    buildCtx@ProjectBuildContext{buildSettings, elaboratedPlan} <-
+    buildCtx@ProjectBuildContext { buildSettings, elaboratedPlan } <-
       runProjectPreBuildPhase
         verbosity
-        ( globalFlags, configFlags, configExFlags
-        , installFlags, haddockFlags )
-        PreBuildHooks {
-          hookPrePlanning      = \_ _ _ -> return (),
-          hookSelectPlanSubset = selectReplTargets userTargets
-        }
+        (globalFlags, configFlags, configExFlags, installFlags, haddockFlags)
+        PreBuildHooks
+          { hookPrePlanning      = \_ _ _ -> return ()
+          , hookSelectPlanSubset = selectReplTargets userTargets
+          }
 
     printPlan verbosity buildCtx
 
@@ -61,12 +63,9 @@ replAction (configFlags, configExFlags, installFlags, haddockFlags)
       buildResults <- runProjectBuildPhase verbosity buildCtx
       reportBuildFailures elaboratedPlan buildResults
   where
-    verbosity = fromFlagOrDefault normal (configVerbosity configFlags)
+    verbosity         = fromFlagOrDefault normal (configVerbosity configFlags)
 
     -- When we interpret the targets on the command line, interpret them as
     -- repl targets (as opposed to say build or haddock targets).
-    selectReplTargets =
-      selectTargets
-        ReplDefaultComponent
-        ReplSpecificComponent
+    selectReplTargets = selectTargets ReplDefaultComponent ReplSpecificComponent
 

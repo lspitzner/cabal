@@ -79,7 +79,7 @@ data CI qpn = Fixed I (Var qpn) | Constrained [VROrigin qpn]
   deriving (Eq, Show, Functor)
 
 showCI :: CI QPN -> String
-showCI (Fixed i _)      = "==" ++ showI i
+showCI (Fixed i _     ) = "==" ++ showI i
 showCI (Constrained vr) = showVR (collapse vr)
 
 -- | Merge constrained instances. We currently adopt a lazy strategy for
@@ -96,22 +96,32 @@ showCI (Constrained vr) = showVR (collapse vr)
 -- set in the sense the it contains variables that allow us to backjump
 -- further. We might apply some heuristics here, such as to change the
 -- order in which we check the constraints.
-merge ::
+merge
+  :: 
 #ifdef DEBUG_CONFLICT_SETS
   (?loc :: CallStack) =>
 #endif
-  Ord qpn => CI qpn -> CI qpn -> Either (ConflictSet qpn, (CI qpn, CI qpn)) (CI qpn)
-merge c@(Fixed i g1)       d@(Fixed j g2)
-  | i == j                                    = Right c
-  | otherwise                                 = Left (CS.union (varToConflictSet g1) (varToConflictSet g2), (c, d))
-merge c@(Fixed (I v _) g1)   (Constrained rs) = go rs -- I tried "reverse rs" here, but it seems to slow things down ...
+     Ord qpn
+  => CI qpn
+  -> CI qpn
+  -> Either (ConflictSet qpn, (CI qpn, CI qpn)) (CI qpn)
+merge c@(Fixed i g1) d@(Fixed j g2)
+  | i == j
+  = Right c
+  | otherwise
+  = Left (CS.union (varToConflictSet g1) (varToConflictSet g2), (c, d))
+merge c@(Fixed (I v _) g1) (Constrained rs) = go rs -- I tried "reverse rs" here, but it seems to slow things down ...
   where
-    go []              = Right c
-    go (d@(vr, g2) : vrs)
-      | checkVR vr v   = go vrs
-      | otherwise      = Left (CS.union (varToConflictSet g1) (varToConflictSet g2), (c, Constrained [d]))
-merge c@(Constrained _)    d@(Fixed _ _)      = merge d c
-merge   (Constrained rs)     (Constrained ss) = Right (Constrained (rs ++ ss))
+    go [] = Right c
+    go (d@(vr, g2):vrs)
+      | checkVR vr v
+      = go vrs
+      | otherwise
+      = Left
+        (CS.union (varToConflictSet g1) (varToConflictSet g2), (c, Constrained
+          [d]))
+merge c@(Constrained _ ) d@(Fixed _ _     ) = merge d c
+merge (  Constrained rs) (  Constrained ss) = Right (Constrained (rs ++ ss))
 
 {-------------------------------------------------------------------------------
   Flagged dependencies
@@ -159,8 +169,8 @@ flattenFlaggedDeps = concatMap aux
   where
     aux :: FlaggedDep Component qpn -> [(Dep qpn, Component)]
     aux (Flagged _ _ t f) = flattenFlaggedDeps t ++ flattenFlaggedDeps f
-    aux (Stanza  _   t)   = flattenFlaggedDeps t
-    aux (Simple d c)      = [(d, c)]
+    aux (Stanza _ t     ) = flattenFlaggedDeps t
+    aux (Simple d c     ) = [(d, c)]
 
 type TrueFlaggedDeps  qpn = FlaggedDeps Component qpn
 type FalseFlaggedDeps qpn = FlaggedDeps Component qpn
@@ -179,18 +189,21 @@ data Dep qpn = Dep  qpn (CI qpn)  -- dependency on a package
   deriving (Eq, Show)
 
 showDep :: Dep QPN -> String
-showDep (Dep qpn (Fixed i v)            ) =
-  (if P qpn /= v then showVar v ++ " => " else "") ++
-  showQPN qpn ++ "==" ++ showI i
+showDep (Dep qpn (Fixed i v)) =
+  (if P qpn /= v then showVar v ++ " => " else "")
+    ++ showQPN qpn
+    ++ "=="
+    ++ showI i
 showDep (Dep qpn (Constrained [(vr, v)])) =
   showVar v ++ " => " ++ showQPN qpn ++ showVR vr
-showDep (Dep qpn ci                     ) =
-  showQPN qpn ++ showCI ci
-showDep (Ext ext)   = "requires " ++ display ext
-showDep (Lang lang) = "requires " ++ display lang
-showDep (Pkg pn vr) = "requires pkg-config package "
-                      ++ display pn ++ display vr
-                      ++ ", not found in the pkg-config database"
+showDep (Dep qpn ci) = showQPN qpn ++ showCI ci
+showDep (Ext  ext  ) = "requires " ++ display ext
+showDep (Lang lang ) = "requires " ++ display lang
+showDep (Pkg pn vr) =
+  "requires pkg-config package "
+    ++ display pn
+    ++ display vr
+    ++ ", not found in the pkg-config database"
 
 -- | Options for goal qualification (used in 'qualifyDeps')
 --
@@ -214,16 +227,20 @@ data QualifyOptions = QO {
 --
 -- NOTE: It's the _dependencies_ of a package that may or may not be independent
 -- from the package itself. Package flag choices must of course be consistent.
-qualifyDeps :: QualifyOptions -> QPN -> FlaggedDeps Component PN -> FlaggedDeps Component QPN
-qualifyDeps QO{..} (Q pp@(PackagePath ns q) pn) = go
+qualifyDeps
+  :: QualifyOptions
+  -> QPN
+  -> FlaggedDeps Component PN
+  -> FlaggedDeps Component QPN
+qualifyDeps QO {..} (Q pp@(PackagePath ns q) pn) = go
   where
     go :: FlaggedDeps Component PN -> FlaggedDeps Component QPN
     go = map go1
 
     go1 :: FlaggedDep Component PN -> FlaggedDep Component QPN
     go1 (Flagged fn nfo t f) = Flagged (fmap (Q pp) fn) nfo (go t) (go f)
-    go1 (Stanza  sn     t)   = Stanza  (fmap (Q pp) sn)     (go t)
-    go1 (Simple dep comp)    = Simple (goD dep comp) comp
+    go1 (Stanza sn  t      ) = Stanza (fmap (Q pp) sn) (go t)
+    go1 (Simple dep comp   ) = Simple (goD dep comp) comp
 
     -- Suppose package B has a setup dependency on package A.
     -- This will be recorded as something like
@@ -234,13 +251,16 @@ qualifyDeps QO{..} (Q pp@(PackagePath ns q) pn) = go
     -- @"A"@ into @"B-setup.A"@, but we should not apply that same qualifier
     -- to the goal or the goal reason chain.
     goD :: Dep PN -> Component -> Dep QPN
-    goD (Ext  ext)    _    = Ext  ext
-    goD (Lang lang)   _    = Lang lang
-    goD (Pkg pkn vr)  _    = Pkg pkn vr
-    goD (Dep  dep ci) comp
-      | qBase  dep  = Dep (Q (PackagePath ns (Base  pn)) dep) (fmap (Q pp) ci)
-      | qSetup comp = Dep (Q (PackagePath ns (Setup pn)) dep) (fmap (Q pp) ci)
-      | otherwise   = Dep (Q (PackagePath ns inheritedQ) dep) (fmap (Q pp) ci)
+    goD (Ext  ext  ) _ = Ext ext
+    goD (Lang lang ) _ = Lang lang
+    goD (Pkg pkn vr) _ = Pkg pkn vr
+    goD (Dep dep ci) comp
+      | qBase dep
+      = Dep (Q (PackagePath ns (Base pn)) dep) (fmap (Q pp) ci)
+      | qSetup comp
+      = Dep (Q (PackagePath ns (Setup pn)) dep) (fmap (Q pp) ci)
+      | otherwise
+      = Dep (Q (PackagePath ns inheritedQ) dep) (fmap (Q pp) ci)
 
     -- If P has a setup dependency on Q, and Q has a regular dependency on R, then
     -- we say that the 'Setup' qualifier is inherited: P has an (indirect) setup
@@ -251,9 +271,9 @@ qualifyDeps QO{..} (Q pp@(PackagePath ns q) pn) = go
     -- a detailed discussion.
     inheritedQ :: Qualifier
     inheritedQ = case q of
-                   Setup _     -> q
-                   Unqualified -> q
-                   Base _      -> Unqualified
+      Setup _     -> q
+      Unqualified -> q
+      Base _      -> Unqualified
 
     -- Should we qualify this goal with the 'Base' package path?
     qBase :: PN -> Bool
@@ -278,14 +298,14 @@ unqualifyDeps = go
 
     go1 :: FlaggedDep comp QPN -> FlaggedDep comp PN
     go1 (Flagged fn nfo t f) = Flagged (fmap unq fn) nfo (go t) (go f)
-    go1 (Stanza  sn     t)   = Stanza  (fmap unq sn)     (go t)
-    go1 (Simple dep comp)    = Simple (goD dep) comp
+    go1 (Stanza sn  t      ) = Stanza (fmap unq sn) (go t)
+    go1 (Simple dep comp   ) = Simple (goD dep) comp
 
     goD :: Dep QPN -> Dep PN
     goD (Dep qpn ci) = Dep (unq qpn) (fmap unq ci)
-    goD (Ext  ext)   = Ext ext
-    goD (Lang lang)  = Lang lang
-    goD (Pkg pn vr)  = Pkg pn vr
+    goD (Ext  ext  ) = Ext ext
+    goD (Lang lang ) = Lang lang
+    goD (Pkg pn vr ) = Pkg pn vr
 
     unq :: QPN -> PN
     unq (Q _ pn) = pn
@@ -297,7 +317,8 @@ unqualifyDeps = go
 forgetCompOpenGoal :: OpenGoal Component -> OpenGoal ()
 forgetCompOpenGoal = mapCompOpenGoal $ const ()
 
-setCompFlaggedDeps :: Component -> FlaggedDeps () qpn -> FlaggedDeps Component qpn
+setCompFlaggedDeps
+  :: Component -> FlaggedDeps () qpn -> FlaggedDeps Component qpn
 setCompFlaggedDeps = mapCompFlaggedDeps . const
 
 {-------------------------------------------------------------------------------
@@ -315,9 +336,9 @@ mapCompFlaggedDeps :: (a -> b) -> FlaggedDeps a qpn -> FlaggedDeps b qpn
 mapCompFlaggedDeps = L.map . mapCompFlaggedDep
 
 mapCompFlaggedDep :: (a -> b) -> FlaggedDep a qpn -> FlaggedDep b qpn
-mapCompFlaggedDep _ (Flagged fn nfo t f) = Flagged fn nfo   t f
-mapCompFlaggedDep _ (Stanza  sn     t  ) = Stanza  sn       t
-mapCompFlaggedDep g (Simple  pn a      ) = Simple  pn (g a)
+mapCompFlaggedDep _ (Flagged fn nfo t f) = Flagged fn nfo t f
+mapCompFlaggedDep _ (Stanza sn t       ) = Stanza sn t
+mapCompFlaggedDep g (Simple pn a       ) = Simple pn (g a)
 
 {-------------------------------------------------------------------------------
   Reverse dependency map
@@ -386,8 +407,8 @@ varToConflictSet = CS.singleton
 goalReasonToVars :: GoalReason qpn -> [Var qpn]
 goalReasonToVars UserGoal                 = []
 goalReasonToVars (PDependency (PI qpn _)) = [P qpn]
-goalReasonToVars (FDependency qfn _)      = [F qfn]
-goalReasonToVars (SDependency qsn)        = [S qsn]
+goalReasonToVars (FDependency qfn _     ) = [F qfn]
+goalReasonToVars (SDependency qsn       ) = [S qsn]
 
 {-------------------------------------------------------------------------------
   Open goals
@@ -402,14 +423,14 @@ data OpenGoal comp = OpenGoal (FlaggedDep comp QPN) QGoalReason
 -- need only during the build phase.
 close :: OpenGoal comp -> Goal QPN
 close (OpenGoal (Simple (Dep qpn _) _) gr) = Goal (P qpn) gr
-close (OpenGoal (Simple (Ext     _) _) _ ) =
+close (OpenGoal (Simple (Ext _) _) _) =
   error "Distribution.Solver.Modular.Dependency.close: called on Ext goal"
-close (OpenGoal (Simple (Lang    _) _) _ ) =
+close (OpenGoal (Simple (Lang _) _) _) =
   error "Distribution.Solver.Modular.Dependency.close: called on Lang goal"
-close (OpenGoal (Simple (Pkg   _ _) _) _ ) =
+close (OpenGoal (Simple (Pkg _ _) _) _) =
   error "Distribution.Solver.Modular.Dependency.close: called on Pkg goal"
-close (OpenGoal (Flagged qfn _ _ _ )   gr) = Goal (F qfn) gr
-close (OpenGoal (Stanza  qsn _)        gr) = Goal (S qsn) gr
+close (OpenGoal (Flagged qfn _ _ _) gr) = Goal (F qfn) gr
+close (OpenGoal (Stanza qsn _     ) gr) = Goal (S qsn) gr
 
 {-------------------------------------------------------------------------------
   Version ranges paired with origins

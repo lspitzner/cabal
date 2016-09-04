@@ -53,10 +53,9 @@ import System.Directory
 
 -- | Does this version range have an upper bound?
 hasUpperBound :: VersionRange -> Bool
-hasUpperBound vr =
-    case asVersionIntervals vr of
-      [] -> False
-      is -> if snd (last is) == NoUpperBound then False else True
+hasUpperBound vr = case asVersionIntervals vr of
+  [] -> False
+  is -> if snd (last is) == NoUpperBound then False else True
 
 -- | Given a version, return an API-compatible (according to PVP) version range.
 --
@@ -68,17 +67,17 @@ hasUpperBound vr =
 -- ">= a.b" incorrect.
 pvpize :: Version -> VersionRange
 pvpize v = orLaterVersion (vn 3)
-           `intersectVersionRanges`
-           earlierVersion (incVersion 1 (vn 2))
+  `intersectVersionRanges` earlierVersion (incVersion 1 (vn 2))
   where
     vn n = (v { versionBranch = take n (versionBranch v) })
 
 -- | Show the PVP-mandated version range for this package. The @padTo@ parameter
 -- specifies the width of the package name column.
 showBounds :: Package pkg => Int -> pkg -> String
-showBounds padTo p = unwords $
-    (padAfter padTo $ unPackageName $ packageName p) :
-    map showInterval (asVersionIntervals $ pvpize $ packageVersion p)
+showBounds padTo p =
+  unwords $ (padAfter padTo $ unPackageName $ packageName p) : map
+    showInterval
+    (asVersionIntervals $ pvpize $ packageVersion p)
   where
     padAfter :: Int -> String -> String
     padAfter n str = str ++ replicate (n - length str) ' '
@@ -91,58 +90,67 @@ showBounds padTo p = unwords $
 
 -- | Entry point for the @gen-bounds@ command.
 genBounds
-    :: Verbosity
-    -> PackageDBStack
-    -> RepoContext
-    -> Compiler
-    -> Platform
-    -> ProgramConfiguration
-    -> Maybe SandboxPackageInfo
-    -> GlobalFlags
-    -> FreezeFlags
-    -> IO ()
-genBounds verbosity packageDBs repoCtxt comp platform conf mSandboxPkgInfo
-      globalFlags freezeFlags = do
+  :: Verbosity
+  -> PackageDBStack
+  -> RepoContext
+  -> Compiler
+  -> Platform
+  -> ProgramConfiguration
+  -> Maybe SandboxPackageInfo
+  -> GlobalFlags
+  -> FreezeFlags
+  -> IO ()
+genBounds verbosity packageDBs repoCtxt comp platform conf mSandboxPkgInfo globalFlags freezeFlags
+  = do
 
     let cinfo = compilerInfo comp
 
-    cwd <- getCurrentDirectory
+    cwd  <- getCurrentDirectory
     path <- tryFindPackageDesc cwd
-    gpd <- readPackageDescription verbosity path
+    gpd  <- readPackageDescription verbosity path
     -- NB: We don't enable tests or benchmarks, since often they
     -- don't really have useful bounds.
-    let epd = finalizePD [] defaultComponentEnabled
-                    (const True) platform cinfo [] gpd
+    let
+      epd =
+        finalizePD [] defaultComponentEnabled (const True) platform cinfo [] gpd
     case epd of
-      Left _ -> putStrLn "finalizePD failed"
-      Right (pd,_) -> do
-        let needBounds = filter (not . hasUpperBound . depVersion) $
-                         buildDepends pd
+      Left  _       -> putStrLn "finalizePD failed"
+      Right (pd, _) -> do
+        let
+          needBounds =
+            filter (not . hasUpperBound . depVersion) $ buildDepends pd
 
         if (null needBounds)
           then putStrLn
-               "Congratulations, all your dependencies have upper bounds!"
+            "Congratulations, all your dependencies have upper bounds!"
           else go needBounds
   where
-     go needBounds = do
-       pkgs  <- getFreezePkgs
-                  verbosity packageDBs repoCtxt comp platform conf
-                  mSandboxPkgInfo globalFlags freezeFlags
+    go needBounds = do
+      pkgs <- getFreezePkgs verbosity
+                            packageDBs
+                            repoCtxt
+                            comp
+                            platform
+                            conf
+                            mSandboxPkgInfo
+                            globalFlags
+                            freezeFlags
 
-       putStrLn boundsNeededMsg
+      putStrLn boundsNeededMsg
 
-       let isNeeded pkg = unPackageName (packageName pkg)
-                          `elem` map depName needBounds
-       let thePkgs = filter isNeeded pkgs
+      let
+        isNeeded pkg =
+          unPackageName (packageName pkg) `elem` map depName needBounds
+      let thePkgs = filter isNeeded pkgs
 
-       let padTo = maximum $ map (length . unPackageName . packageName) pkgs
-       mapM_ (putStrLn . (++",") . showBounds padTo) thePkgs
+      let padTo   = maximum $ map (length . unPackageName . packageName) pkgs
+      mapM_ (putStrLn . (++",") . showBounds padTo) thePkgs
 
-     depName :: Dependency -> String
-     depName (Dependency (PackageName nm) _) = nm
+    depName :: Dependency -> String
+    depName (Dependency (PackageName nm) _) = nm
 
-     depVersion :: Dependency -> VersionRange
-     depVersion (Dependency _ vr) = vr
+    depVersion :: Dependency -> VersionRange
+    depVersion (Dependency _ vr) = vr
 
 -- | The message printed when some dependencies are found to be lacking proper
 -- PVP-mandated bounds.

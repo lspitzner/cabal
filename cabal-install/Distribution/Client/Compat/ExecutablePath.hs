@@ -124,12 +124,11 @@ foreign import ccall unsafe "readlink"
 --
 -- See readlink(2)
 readSymbolicLink :: FilePath -> IO FilePath
-readSymbolicLink file =
-    allocaArray0 4096 $ \buf -> do
-        withFilePath file $ \s -> do
-            len <- throwErrnoPathIfMinus1 "readSymbolicLink" file $
-                   c_readlink s buf 4096
-            peekFilePathLen (buf,fromIntegral len)
+readSymbolicLink file = allocaArray0 4096 $ \buf -> do
+  withFilePath file $ \s -> do
+    len <- throwErrnoPathIfMinus1 "readSymbolicLink" file
+      $ c_readlink s buf 4096
+    peekFilePathLen (buf, fromIntegral len)
 
 getExecutablePath = readSymbolicLink $ "/proc/self/exe"
 

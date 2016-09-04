@@ -66,23 +66,22 @@ data JobControl m a = JobControl {
 --
 newSerialJobControl :: IO (JobControl IO a)
 newSerialJobControl = do
-    qVar <- newTChanIO
-    return JobControl {
-      spawnJob      = spawn     qVar,
-      collectJob    = collect   qVar,
-      remainingJobs = remaining qVar,
-      cancelJobs    = cancel    qVar
+  qVar <- newTChanIO
+  return JobControl
+    { spawnJob      = spawn qVar
+    , collectJob    = collect qVar
+    , remainingJobs = remaining qVar
+    , cancelJobs    = cancel qVar
     }
   where
     spawn :: TChan (IO a) -> IO a -> IO ()
     spawn qVar job = atomically $ writeTChan qVar job
 
     collect :: TChan (IO a) -> IO a
-    collect qVar =
-      join $ atomically $ readTChan qVar
+    collect qVar = join $ atomically $ readTChan qVar
 
     remaining :: TChan (IO a) -> IO Bool
-    remaining qVar  = fmap not $ atomically $ isEmptyTChan qVar
+    remaining qVar = fmap not $ atomically $ isEmptyTChan qVar
 
     cancel :: TChan (IO a) -> IO ()
     cancel qVar = do
@@ -100,31 +99,27 @@ newParallelJobControl :: Int -> IO (JobControl IO a)
 newParallelJobControl n | n < 1 || n > 1000 =
   error $ "newParallelJobControl: not a sensible number of jobs: " ++ show n
 newParallelJobControl maxJobLimit = do
-    inqVar   <- newTChanIO
-    outqVar  <- newTChanIO
-    countVar <- newTVarIO 0
-    replicateM_ maxJobLimit $
-      forkIO $
-        worker inqVar outqVar
-    return JobControl {
-      spawnJob      = spawn   inqVar  countVar,
-      collectJob    = collect outqVar countVar,
-      remainingJobs = remaining       countVar,
-      cancelJobs    = cancel  inqVar  countVar
+  inqVar   <- newTChanIO
+  outqVar  <- newTChanIO
+  countVar <- newTVarIO 0
+  replicateM_ maxJobLimit $ forkIO $ worker inqVar outqVar
+  return JobControl
+    { spawnJob      = spawn inqVar countVar
+    , collectJob    = collect outqVar countVar
+    , remainingJobs = remaining countVar
+    , cancelJobs    = cancel inqVar countVar
     }
   where
-    worker ::  TChan (IO a) -> TChan (Either SomeException a) -> IO ()
-    worker inqVar outqVar =
-      forever $ do
-        job <- atomically $ readTChan inqVar
-        res <- try job
-        atomically $ writeTChan outqVar res
+    worker :: TChan (IO a) -> TChan (Either SomeException a) -> IO ()
+    worker inqVar outqVar = forever $ do
+      job <- atomically $ readTChan inqVar
+      res <- try job
+      atomically $ writeTChan outqVar res
 
     spawn :: TChan (IO a) -> TVar Int -> IO a -> IO ()
-    spawn inqVar countVar job =
-      atomically $ do
-        modifyTVar' countVar (+1)
-        writeTChan inqVar job
+    spawn inqVar countVar job = atomically $ do
+      modifyTVar' countVar (+1)
+      writeTChan  inqVar   job
 
     collect :: TChan (Either SomeException a) -> TVar Int -> IO a
     collect outqVar countVar = do
@@ -137,10 +132,9 @@ newParallelJobControl maxJobLimit = do
     remaining countVar = fmap (/=0) $ atomically $ readTVar countVar
 
     cancel :: TChan (IO a) -> TVar Int -> IO ()
-    cancel inqVar countVar =
-      atomically $ do
-        xs <- readAllTChan inqVar
-        modifyTVar' countVar (subtract (length xs))
+    cancel inqVar countVar = atomically $ do
+      xs <- readAllTChan inqVar
+      modifyTVar' countVar (subtract (length xs))
 
 readAllTChan :: TChan a -> STM [a]
 readAllTChan qvar = go []
@@ -149,7 +143,7 @@ readAllTChan qvar = go []
       mx <- tryReadTChan qvar
       case mx of
         Nothing -> return (reverse xs)
-        Just x  -> go (x:xs)
+        Just x  -> go (x : xs)
 
 -------------------------
 -- Job limits and locks
@@ -158,12 +152,10 @@ readAllTChan qvar = go []
 data JobLimit = JobLimit QSem
 
 newJobLimit :: Int -> IO JobLimit
-newJobLimit n =
-  fmap JobLimit (newQSem n)
+newJobLimit n = fmap JobLimit (newQSem n)
 
 withJobLimit :: JobLimit -> IO a -> IO a
-withJobLimit (JobLimit sem) =
-  bracket_ (waitQSem sem) (signalQSem sem)
+withJobLimit (JobLimit sem) = bracket_ (waitQSem sem) (signalQSem sem)
 
 newtype Lock = Lock (MVar ())
 

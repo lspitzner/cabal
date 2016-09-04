@@ -103,94 +103,115 @@ import Data.Maybe
 -- controlled from the config file. Of course it only works on POSIX systems
 -- with symlinks so is not available to Windows users.
 --
-symlinkBinaries :: Platform -> Compiler
-                -> ConfigFlags
-                -> InstallFlags
-                -> InstallPlan
-                -> BuildResults
-                -> IO [(PackageIdentifier, String, FilePath)]
+symlinkBinaries
+  :: Platform
+  -> Compiler
+  -> ConfigFlags
+  -> InstallFlags
+  -> InstallPlan
+  -> BuildResults
+  -> IO [(PackageIdentifier, String, FilePath)]
 symlinkBinaries platform comp configFlags installFlags plan buildResults =
   case flagToMaybe (installSymlinkBinDir installFlags) of
-    Nothing            -> return []
+    Nothing -> return []
     Just symlinkBinDir
-           | null exes -> return []
-           | otherwise -> do
-      publicBinDir  <- canonicalizePath symlinkBinDir
---    TODO: do we want to do this here? :
---      createDirectoryIfMissing True publicBinDir
-      fmap catMaybes $ sequence
-        [ do privateBinDir <- pkgBinDir pkg ipid
-             ok <- symlinkBinary
-                     publicBinDir  privateBinDir
-                     publicExeName privateExeName
-             if ok
-               then return Nothing
-               else return (Just (pkgid, publicExeName,
-                                  privateBinDir </> privateExeName))
-        | (rpkg, pkg, exe) <- exes
-        , let pkgid  = packageId pkg
-              -- This is a bit dodgy; probably won't work for Backpack packages
-              ipid = installedUnitId rpkg
-              publicExeName  = PackageDescription.exeName exe
-              privateExeName = prefix ++ publicExeName ++ suffix
-              prefix = substTemplate pkgid ipid prefixTemplate
-              suffix = substTemplate pkgid ipid suffixTemplate ]
+      | null exes
+      -> return []
+      | otherwise
+      -> do
+        publicBinDir <- canonicalizePath symlinkBinDir
+  --    TODO: do we want to do this here? :
+  --      createDirectoryIfMissing True publicBinDir
+        fmap catMaybes $ sequence
+          [ do
+            privateBinDir <- pkgBinDir pkg ipid
+            ok            <- symlinkBinary publicBinDir
+                                           privateBinDir
+                                           publicExeName
+                                           privateExeName
+            if ok
+            then
+              return Nothing
+            else
+              return
+                (Just (pkgid, publicExeName, privateBinDir </> privateExeName))
+          | (rpkg, pkg, exe) <- exes
+          , let pkgid          = packageId pkg
+                -- This is a bit dodgy; probably won't work for Backpack packages
+                ipid           = installedUnitId rpkg
+                publicExeName  = PackageDescription.exeName exe
+                privateExeName = prefix ++ publicExeName ++ suffix
+                prefix         = substTemplate pkgid ipid prefixTemplate
+                suffix         = substTemplate pkgid ipid suffixTemplate
+          ]
   where
     exes =
       [ (cpkg, pkg, exe)
       | InstallPlan.Configured cpkg <- InstallPlan.toList plan
       , case InstallPlan.lookupBuildResult cpkg buildResults of
-          Just (Right _success) -> True
-          _                     -> False
+        Just (Right _success) -> True
+        _                     -> False
       , let pkg :: PackageDescription
             pkg = pkgDescription cpkg
       , exe <- PackageDescription.executables pkg
-      , PackageDescription.buildable (PackageDescription.buildInfo exe) ]
+      , PackageDescription.buildable (PackageDescription.buildInfo exe)
+      ]
 
-    pkgDescription (ConfiguredPackage _ (SourcePackage _ pkg _ _)
-                                      flags stanzas _) =
-      case finalizePD flags (enableStanzas stanzas)
-             (const True)
-             platform cinfo [] pkg of
-        Left _ -> error "finalizePD ReadyPackage failed"
-        Right (desc, _) -> desc
+    pkgDescription (ConfiguredPackage _ (SourcePackage _ pkg _ _) flags stanzas _)
+      = case
+          finalizePD flags
+                     (enableStanzas stanzas)
+                     (const True)
+                     platform
+                     cinfo
+                     []
+                     pkg
+        of
+          Left  _         -> error "finalizePD ReadyPackage failed"
+          Right (desc, _) -> desc
 
     -- This is sadly rather complicated. We're kind of re-doing part of the
     -- configuration for the package. :-(
     pkgBinDir :: PackageDescription -> UnitId -> IO FilePath
     pkgBinDir pkg ipid = do
       defaultDirs <- InstallDirs.defaultInstallDirs
-                       compilerFlavor
-                       (fromFlag (configUserInstall configFlags))
-                       (PackageDescription.hasLibs pkg)
-      let templateDirs = InstallDirs.combineInstallDirs fromFlagOrDefault
-                           defaultDirs (configInstallDirs configFlags)
+        compilerFlavor
+        (fromFlag (configUserInstall configFlags))
+        (PackageDescription.hasLibs pkg)
+      let templateDirs = InstallDirs.combineInstallDirs
+            fromFlagOrDefault
+            defaultDirs
+            (configInstallDirs configFlags)
           absoluteDirs = InstallDirs.absoluteInstallDirs
-                           (packageId pkg) ipid
-                           cinfo InstallDirs.NoCopyDest
-                           platform templateDirs
+            (packageId pkg)
+            ipid
+            cinfo
+            InstallDirs.NoCopyDest
+            platform
+            templateDirs
       canonicalizePath (InstallDirs.bindir absoluteDirs)
 
     substTemplate pkgid ipid = InstallDirs.fromPathTemplate
-                             . InstallDirs.substPathTemplate env
-      where env = InstallDirs.initialPathTemplateEnv pkgid ipid
-                                                     cinfo platform
+      . InstallDirs.substPathTemplate env
+      where
+        env = InstallDirs.initialPathTemplateEnv pkgid ipid cinfo platform
 
     fromFlagTemplate = fromFlagOrDefault (InstallDirs.toPathTemplate "")
-    prefixTemplate   = fromFlagTemplate (configProgPrefix configFlags)
-    suffixTemplate   = fromFlagTemplate (configProgSuffix configFlags)
-    cinfo            = compilerInfo comp
+    prefixTemplate = fromFlagTemplate (configProgPrefix configFlags)
+    suffixTemplate = fromFlagTemplate (configProgSuffix configFlags)
+    cinfo = compilerInfo comp
     (CompilerId compilerFlavor _) = compilerInfoId cinfo
 
-symlinkBinary :: FilePath -- ^ The canonical path of the public bin dir
+symlinkBinary
+  :: FilePath -- ^ The canonical path of the public bin dir
                           --   eg @/home/user/bin@
-              -> FilePath -- ^ The canonical path of the private bin dir
+  -> FilePath -- ^ The canonical path of the private bin dir
                           --   eg @/home/user/.cabal/bin@
-              -> String   -- ^ The name of the executable to go in the public
+  -> String   -- ^ The name of the executable to go in the public
                           --   bin dir, eg @foo@
-              -> String   -- ^ The name of the executable to in the private bin
+  -> String   -- ^ The name of the executable to in the private bin
                           --   dir, eg @foo-1.0@
-              -> IO Bool  -- ^ If creating the symlink was successful. @False@
+  -> IO Bool  -- ^ If creating the symlink was successful. @False@
                           --   if there was another file there already that we
                           --   did not own. Other errors like permission errors
                           --   just propagate as exceptions.
@@ -198,38 +219,38 @@ symlinkBinary publicBindir privateBindir publicName privateName = do
   ok <- targetOkToOverwrite (publicBindir </> publicName)
                             (privateBindir </> privateName)
   case ok of
-    NotOurFile    ->                     return False
-    NotExists     ->           mkLink >> return True
+    NotOurFile    -> return False
+    NotExists     -> mkLink >> return True
     OkToOverwrite -> rmLink >> mkLink >> return True
   where
     relativeBindir = makeRelative publicBindir privateBindir
-    mkLink = createSymbolicLink (relativeBindir </> privateName)
-                                (publicBindir   </> publicName)
-    rmLink = removeLink (publicBindir </> publicName)
+    mkLink         = createSymbolicLink (relativeBindir </> privateName)
+                                        (publicBindir </> publicName)
+    rmLink         = removeLink (publicBindir </> publicName)
 
 -- | Check a file path of a symlink that we would like to create to see if it
 -- is OK. For it to be OK to overwrite it must either not already exist yet or
 -- be a symlink to our target (in which case we can assume ownership).
 --
-targetOkToOverwrite :: FilePath -- ^ The file path of the symlink to the private
+targetOkToOverwrite
+  :: FilePath -- ^ The file path of the symlink to the private
                                 -- binary that we would like to create
-                    -> FilePath -- ^ The canonical path of the private binary.
+  -> FilePath -- ^ The canonical path of the private binary.
                                 -- Use 'canonicalizePath' to make this.
-                    -> IO SymlinkStatus
+  -> IO SymlinkStatus
 targetOkToOverwrite symlink target = handleNotExist $ do
   status <- getSymbolicLinkStatus symlink
   if not (isSymbolicLink status)
     then return NotOurFile
-    else do target' <- canonicalizePath symlink
-            -- This relies on canonicalizePath handling symlinks
-            if target == target'
-              then return OkToOverwrite
-              else return NotOurFile
-
+    else do
+      target' <- canonicalizePath symlink
+      -- This relies on canonicalizePath handling symlinks
+      if target == target' then return OkToOverwrite else return NotOurFile
   where
-    handleNotExist action = catchIO action $ \ioexception ->
+    handleNotExist action =
+      catchIO action $ \ioexception ->
       -- If the target doesn't exist then there's no problem overwriting it!
-      if isDoesNotExistError ioexception
+                                       if isDoesNotExistError ioexception
         then return NotExists
         else ioError ioexception
 
@@ -246,11 +267,11 @@ data SymlinkStatus
 -- to the second, even if it means adding @..@ path components.
 --
 makeRelative :: FilePath -> FilePath -> FilePath
-makeRelative a b = assert (isAbsolute a && isAbsolute b) $
-  let as = splitPath a
-      bs = splitPath b
-      commonLen = length $ takeWhile id $ zipWith (==) as bs
-   in joinPath $ [ ".." | _  <- drop commonLen as ]
-              ++ drop commonLen bs
+makeRelative a b =
+  assert (isAbsolute a && isAbsolute b)
+    $ let as        = splitPath a
+          bs        = splitPath b
+          commonLen = length $ takeWhile id $ zipWith (==) as bs
+      in  joinPath $ [ ".." | _ <- drop commonLen as ] ++ drop commonLen bs
 
 #endif

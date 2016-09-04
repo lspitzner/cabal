@@ -31,22 +31,24 @@ data PInfo = PInfo (FlaggedDeps Component PN) FlagInfo (Maybe FailReason)
   deriving (Show)
 
 mkIndex :: [(PN, I, PInfo)] -> Index
-mkIndex xs = M.map M.fromList (groupMap (L.map (\ (pn, i, pi) -> (pn, (i, pi))) xs))
+mkIndex xs =
+  M.map M.fromList (groupMap (L.map (\(pn, i, pi) -> (pn, (i, pi))) xs))
 
 groupMap :: Ord a => [(a, b)] -> Map a [b]
-groupMap xs = M.fromListWith (flip (++)) (L.map (\ (x, y) -> (x, [y])) xs)
+groupMap xs = M.fromListWith (flip (++)) (L.map (\(x, y) -> (x, [y])) xs)
 
 defaultQualifyOptions :: Index -> QualifyOptions
-defaultQualifyOptions idx = QO {
-      qoBaseShim         = or [ dep == base
-                              | -- Find all versions of base ..
-                                Just is <- [M.lookup base idx]
+defaultQualifyOptions idx = QO
+  { qoBaseShim         = or
+    [ dep == base
+    | -- Find all versions of base ..
+      Just is                                      <- [M.lookup base idx]
                                 -- .. which are installed ..
-                              , (I _ver (Inst _), PInfo deps _flagNfo _fr) <- M.toList is
+    , (I   _ver (Inst _), PInfo deps _flagNfo _fr) <- M.toList is
                                 -- .. and flatten all their dependencies ..
-                              , (Dep dep _ci, _comp) <- flattenFlaggedDeps deps
-                              ]
-    , qoSetupIndependent = True
-    }
+    , (Dep dep  _ci     , _comp                  ) <- flattenFlaggedDeps deps
+    ]
+  , qoSetupIndependent = True
+  }
   where
     base = PackageName "base"

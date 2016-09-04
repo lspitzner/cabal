@@ -19,16 +19,15 @@ import Foreign.C
 import System.Win32.File (setFileAttributes, fILE_ATTRIBUTE_HIDDEN)
 #endif /* mingw32_HOST_OS */
 
-setFileHidden, setFileOrdinary,  setFileExecutable  :: FilePath -> IO ()
+setFileHidden, setFileOrdinary, setFileExecutable :: FilePath -> IO ()
 #ifndef mingw32_HOST_OS
-setFileOrdinary   path = setFileMode path 0o644 -- file perms -rw-r--r--
+setFileOrdinary path = setFileMode path 0o644 -- file perms -rw-r--r--
 setFileExecutable path = setFileMode path 0o755 -- file perms -rwxr-xr-x
-setFileHidden     _    = return ()
+setFileHidden _ = return ()
 
 setFileMode :: FilePath -> FileMode -> IO ()
-setFileMode name m =
-  withCString name $ \s ->
-    throwErrnoPathIfMinus1_ "setFileMode" name (c_chmod s m)
+setFileMode name m = withCString name
+  $ \s -> throwErrnoPathIfMinus1_ "setFileMode" name (c_chmod s m)
 #else
 setFileOrdinary   _ = return ()
 setFileExecutable _ = return ()

@@ -119,32 +119,30 @@ import Network.URI (URI(..), URIAuth(..), parseAbsoluteURI)
 -- 'PackageName'. This returns the configuration that applies to all local
 -- packages plus any package-specific configuration for this package.
 --
-lookupLocalPackageConfig :: (Semigroup a, Monoid a)
-                         => (PackageConfig -> a)
-                         -> ProjectConfig
-                         -> PackageName -> a
-lookupLocalPackageConfig field ProjectConfig {
-                           projectConfigLocalPackages,
-                           projectConfigSpecificPackage
-                         } pkgname =
-    field projectConfigLocalPackages
- <> maybe mempty field
-          (Map.lookup pkgname (getMapMappend projectConfigSpecificPackage))
+lookupLocalPackageConfig
+  :: (Semigroup a, Monoid a)
+  => (PackageConfig -> a)
+  -> ProjectConfig
+  -> PackageName
+  -> a
+lookupLocalPackageConfig field ProjectConfig { projectConfigLocalPackages, projectConfigSpecificPackage } pkgname
+  = field projectConfigLocalPackages <> maybe
+    mempty
+    field
+    (Map.lookup pkgname (getMapMappend projectConfigSpecificPackage))
 
 
 -- | Use a 'RepoContext' based on the 'BuildTimeSettings'.
 --
-projectConfigWithBuilderRepoContext :: Verbosity
-                                    -> BuildTimeSettings
-                                    -> (RepoContext -> IO a) -> IO a
-projectConfigWithBuilderRepoContext verbosity BuildTimeSettings{..} =
-    withRepoContext'
-      verbosity
-      buildSettingRemoteRepos
-      buildSettingLocalRepos
-      buildSettingCacheDir
-      buildSettingHttpTransport
-      (Just buildSettingIgnoreExpiry)
+projectConfigWithBuilderRepoContext
+  :: Verbosity -> BuildTimeSettings -> (RepoContext -> IO a) -> IO a
+projectConfigWithBuilderRepoContext verbosity BuildTimeSettings {..} =
+  withRepoContext' verbosity
+                   buildSettingRemoteRepos
+                   buildSettingLocalRepos
+                   buildSettingCacheDir
+                   buildSettingHttpTransport
+                   (Just buildSettingIgnoreExpiry)
 
 
 -- | Use a 'RepoContext', but only for the solver. The solver does not use the
@@ -152,53 +150,53 @@ projectConfigWithBuilderRepoContext verbosity BuildTimeSettings{..} =
 -- that doesn't have an http transport. And that avoids having to have access
 -- to the 'BuildTimeSettings'
 --
-projectConfigWithSolverRepoContext :: Verbosity
-                                   -> FilePath
-                                   -> ProjectConfigShared
-                                   -> ProjectConfigBuildOnly
-                                   -> (RepoContext -> IO a) -> IO a
-projectConfigWithSolverRepoContext verbosity downloadCacheRootDir
-                                   ProjectConfigShared{..}
-                                   ProjectConfigBuildOnly{..} =
-    withRepoContext'
-      verbosity
-      (fromNubList projectConfigRemoteRepos)
-      (fromNubList projectConfigLocalRepos)
-      downloadCacheRootDir
-      (flagToMaybe projectConfigHttpTransport)
-      (flagToMaybe projectConfigIgnoreExpiry)
+projectConfigWithSolverRepoContext
+  :: Verbosity
+  -> FilePath
+  -> ProjectConfigShared
+  -> ProjectConfigBuildOnly
+  -> (RepoContext -> IO a)
+  -> IO a
+projectConfigWithSolverRepoContext verbosity downloadCacheRootDir ProjectConfigShared {..} ProjectConfigBuildOnly {..}
+  = withRepoContext' verbosity
+                     (fromNubList projectConfigRemoteRepos)
+                     (fromNubList projectConfigLocalRepos)
+                     downloadCacheRootDir
+                     (flagToMaybe projectConfigHttpTransport)
+                     (flagToMaybe projectConfigIgnoreExpiry)
 
 
 -- | Resolve the project configuration, with all its optional fields, into
 -- 'SolverSettings' with no optional fields (by applying defaults).
 --
 resolveSolverSettings :: ProjectConfig -> SolverSettings
-resolveSolverSettings ProjectConfig{
-                        projectConfigShared,
-                        projectConfigLocalPackages,
-                        projectConfigSpecificPackage
-                      } =
-    SolverSettings {..}
+resolveSolverSettings ProjectConfig { projectConfigShared, projectConfigLocalPackages, projectConfigSpecificPackage }
+  = SolverSettings {..}
   where
     --TODO: [required eventually] some of these settings need validation, e.g.
     -- the flag assignments need checking.
-    solverSettingRemoteRepos       = fromNubList projectConfigRemoteRepos
-    solverSettingLocalRepos        = fromNubList projectConfigLocalRepos
-    solverSettingConstraints       = projectConfigConstraints
-    solverSettingPreferences       = projectConfigPreferences
-    solverSettingFlagAssignment    = packageConfigFlagAssignment projectConfigLocalPackages
-    solverSettingFlagAssignments   = fmap packageConfigFlagAssignment
-                                          (getMapMappend projectConfigSpecificPackage)
-    solverSettingCabalVersion      = flagToMaybe projectConfigCabalVersion
-    solverSettingSolver            = fromFlag projectConfigSolver
-    solverSettingAllowOlder        = fromJust projectConfigAllowOlder
-    solverSettingAllowNewer        = fromJust projectConfigAllowNewer
-    solverSettingMaxBackjumps      = case fromFlag projectConfigMaxBackjumps of
-                                       n | n < 0     -> Nothing
-                                         | otherwise -> Just n
-    solverSettingReorderGoals      = fromFlag projectConfigReorderGoals
-    solverSettingCountConflicts    = fromFlag projectConfigCountConflicts
-    solverSettingStrongFlags       = fromFlag projectConfigStrongFlags
+    solverSettingRemoteRepos = fromNubList projectConfigRemoteRepos
+    solverSettingLocalRepos  = fromNubList projectConfigLocalRepos
+    solverSettingConstraints = projectConfigConstraints
+    solverSettingPreferences = projectConfigPreferences
+    solverSettingFlagAssignment =
+      packageConfigFlagAssignment projectConfigLocalPackages
+    solverSettingFlagAssignments = fmap
+      packageConfigFlagAssignment
+      (getMapMappend projectConfigSpecificPackage)
+    solverSettingCabalVersion    = flagToMaybe projectConfigCabalVersion
+    solverSettingSolver          = fromFlag projectConfigSolver
+    solverSettingAllowOlder      = fromJust projectConfigAllowOlder
+    solverSettingAllowNewer      = fromJust projectConfigAllowNewer
+    solverSettingMaxBackjumps    = case fromFlag projectConfigMaxBackjumps of
+      n
+        | n < 0
+        -> Nothing
+        | otherwise
+        -> Just n
+    solverSettingReorderGoals    = fromFlag projectConfigReorderGoals
+    solverSettingCountConflicts  = fromFlag projectConfigCountConflicts
+    solverSettingStrongFlags     = fromFlag projectConfigStrongFlags
   --solverSettingIndependentGoals  = fromFlag projectConfigIndependentGoals
   --solverSettingShadowPkgs        = fromFlag projectConfigShadowPkgs
   --solverSettingReinstall         = fromFlag projectConfigReinstall
@@ -206,82 +204,70 @@ resolveSolverSettings ProjectConfig{
   --solverSettingOverrideReinstall = fromFlag projectConfigOverrideReinstall
   --solverSettingUpgradeDeps       = fromFlag projectConfigUpgradeDeps
 
-    ProjectConfigShared {..} = defaults <> projectConfigShared
+    ProjectConfigShared {..}     = defaults <> projectConfigShared
 
-    defaults = mempty {
-       projectConfigSolver            = Flag defaultSolver,
-       projectConfigAllowOlder        = Just (AllowOlder RelaxDepsNone),
-       projectConfigAllowNewer        = Just (AllowNewer RelaxDepsNone),
-       projectConfigMaxBackjumps      = Flag defaultMaxBackjumps,
-       projectConfigReorderGoals      = Flag (ReorderGoals False),
-       projectConfigCountConflicts    = Flag (CountConflicts True),
-       projectConfigStrongFlags       = Flag (StrongFlags False)
+    defaults                     = mempty
+      { projectConfigSolver         = Flag defaultSolver
+      , projectConfigAllowOlder     = Just (AllowOlder RelaxDepsNone)
+      , projectConfigAllowNewer     = Just (AllowNewer RelaxDepsNone)
+      , projectConfigMaxBackjumps   = Flag defaultMaxBackjumps
+      , projectConfigReorderGoals   = Flag (ReorderGoals False)
+      , projectConfigCountConflicts = Flag (CountConflicts True)
+      , projectConfigStrongFlags    = Flag (StrongFlags False)
      --projectConfigIndependentGoals  = Flag False,
      --projectConfigShadowPkgs        = Flag False,
      --projectConfigReinstall         = Flag False,
      --projectConfigAvoidReinstalls   = Flag False,
      --projectConfigOverrideReinstall = Flag False,
      --projectConfigUpgradeDeps       = Flag False
-    }
+      }
 
 
 -- | Resolve the project configuration, with all its optional fields, into
 -- 'BuildTimeSettings' with no optional fields (by applying defaults).
 --
-resolveBuildTimeSettings :: Verbosity
-                         -> CabalDirLayout
-                         -> ProjectConfigShared
-                         -> ProjectConfigBuildOnly
-                         -> ProjectConfigBuildOnly
-                         -> BuildTimeSettings
-resolveBuildTimeSettings verbosity
-                         CabalDirLayout {
-                           cabalLogsDirectory,
-                           cabalPackageCacheDirectory
-                         }
-                         ProjectConfigShared {
-                           projectConfigRemoteRepos,
-                           projectConfigLocalRepos
-                         }
-                         fromProjectFile
-                         fromCommandLine =
-    BuildTimeSettings {..}
+resolveBuildTimeSettings
+  :: Verbosity
+  -> CabalDirLayout
+  -> ProjectConfigShared
+  -> ProjectConfigBuildOnly
+  -> ProjectConfigBuildOnly
+  -> BuildTimeSettings
+resolveBuildTimeSettings verbosity CabalDirLayout { cabalLogsDirectory, cabalPackageCacheDirectory } ProjectConfigShared { projectConfigRemoteRepos, projectConfigLocalRepos } fromProjectFile fromCommandLine
+  = BuildTimeSettings {..}
   where
-    buildSettingDryRun        = fromFlag    projectConfigDryRun
-    buildSettingOnlyDeps      = fromFlag    projectConfigOnlyDeps
+    buildSettingDryRun        = fromFlag projectConfigDryRun
+    buildSettingOnlyDeps      = fromFlag projectConfigOnlyDeps
     buildSettingSummaryFile   = fromNubList projectConfigSummaryFile
     --buildSettingLogFile       -- defined below, more complicated
     --buildSettingLogVerbosity  -- defined below, more complicated
-    buildSettingBuildReports  = fromFlag    projectConfigBuildReports
-    buildSettingSymlinkBinDir = flagToList  projectConfigSymlinkBinDir
-    buildSettingOneShot       = fromFlag    projectConfigOneShot
+    buildSettingBuildReports  = fromFlag projectConfigBuildReports
+    buildSettingSymlinkBinDir = flagToList projectConfigSymlinkBinDir
+    buildSettingOneShot       = fromFlag projectConfigOneShot
     buildSettingNumJobs       = determineNumJobs projectConfigNumJobs
-    buildSettingKeepGoing     = fromFlag    projectConfigKeepGoing
-    buildSettingOfflineMode   = fromFlag    projectConfigOfflineMode
-    buildSettingKeepTempFiles = fromFlag    projectConfigKeepTempFiles
+    buildSettingKeepGoing     = fromFlag projectConfigKeepGoing
+    buildSettingOfflineMode   = fromFlag projectConfigOfflineMode
+    buildSettingKeepTempFiles = fromFlag projectConfigKeepTempFiles
     buildSettingRemoteRepos   = fromNubList projectConfigRemoteRepos
     buildSettingLocalRepos    = fromNubList projectConfigLocalRepos
     buildSettingCacheDir      = cabalPackageCacheDirectory
     buildSettingHttpTransport = flagToMaybe projectConfigHttpTransport
-    buildSettingIgnoreExpiry  = fromFlag    projectConfigIgnoreExpiry
-    buildSettingReportPlanningFailure
-                              = fromFlag projectConfigReportPlanningFailure
+    buildSettingIgnoreExpiry  = fromFlag projectConfigIgnoreExpiry
+    buildSettingReportPlanningFailure =
+      fromFlag projectConfigReportPlanningFailure
 
-    ProjectConfigBuildOnly{..} = defaults
-                              <> fromProjectFile
-                              <> fromCommandLine
+    ProjectConfigBuildOnly {..} = defaults <> fromProjectFile <> fromCommandLine
 
-    defaults = mempty {
-      projectConfigDryRun                = toFlag False,
-      projectConfigOnlyDeps              = toFlag False,
-      projectConfigBuildReports          = toFlag NoReports,
-      projectConfigReportPlanningFailure = toFlag False,
-      projectConfigKeepGoing             = toFlag False,
-      projectConfigOneShot               = toFlag False,
-      projectConfigOfflineMode           = toFlag False,
-      projectConfigKeepTempFiles         = toFlag False,
-      projectConfigIgnoreExpiry          = toFlag False
-    }
+    defaults = mempty { projectConfigDryRun                = toFlag False
+                      , projectConfigOnlyDeps              = toFlag False
+                      , projectConfigBuildReports          = toFlag NoReports
+                      , projectConfigReportPlanningFailure = toFlag False
+                      , projectConfigKeepGoing             = toFlag False
+                      , projectConfigOneShot               = toFlag False
+                      , projectConfigOfflineMode           = toFlag False
+                      , projectConfigKeepTempFiles         = toFlag False
+                      , projectConfigIgnoreExpiry          = toFlag False
+                      }
 
     -- The logging logic: what log file to use and what verbosity.
     --
@@ -290,45 +276,54 @@ resolveBuildTimeSettings verbosity
     -- provided location. Otherwise don't use logging, unless building in
     -- parallel (in which case the default location is used).
     --
-    buildSettingLogFile :: Maybe (Compiler -> Platform
-                               -> PackageId -> UnitId -> FilePath)
     buildSettingLogFile
-      | useDefaultTemplate = Just (substLogFileName defaultTemplate)
-      | otherwise          = fmap  substLogFileName givenTemplate
+      :: Maybe (Compiler -> Platform -> PackageId -> UnitId -> FilePath)
+    buildSettingLogFile
+      | useDefaultTemplate
+      = Just (substLogFileName defaultTemplate)
+      | otherwise
+      = fmap substLogFileName givenTemplate
 
-    defaultTemplate = toPathTemplate $
-                        cabalLogsDirectory </> "$pkgid" <.> "log"
+    defaultTemplate = toPathTemplate $ cabalLogsDirectory </> "$pkgid" <.> "log"
     givenTemplate   = flagToMaybe projectConfigLogFile
 
     useDefaultTemplate
-      | buildSettingBuildReports == DetailedReports = True
-      | isJust givenTemplate                        = False
-      | isParallelBuild                             = True
-      | otherwise                                   = False
+      | buildSettingBuildReports == DetailedReports
+      = True
+      | isJust givenTemplate
+      = False
+      | isParallelBuild
+      = True
+      | otherwise
+      = False
 
     isParallelBuild = buildSettingNumJobs >= 2
 
-    substLogFileName :: PathTemplate
-                     -> Compiler -> Platform
-                     -> PackageId -> UnitId -> FilePath
-    substLogFileName template compiler platform pkgid uid =
-        fromPathTemplate (substPathTemplate env template)
+    substLogFileName
+      :: PathTemplate -> Compiler -> Platform -> PackageId -> UnitId -> FilePath
+    substLogFileName template compiler platform pkgid uid = fromPathTemplate
+      (substPathTemplate env template)
       where
-        env = initialPathTemplateEnv
-                pkgid uid (compilerInfo compiler) platform
+        env = initialPathTemplateEnv pkgid uid (compilerInfo compiler) platform
 
     -- If the user has specified --remote-build-reporting=detailed or
     -- --build-log, use more verbose logging.
     --
     buildSettingLogVerbosity
-      | overrideVerbosity = max verbose verbosity
-      | otherwise         = verbosity
+      | overrideVerbosity
+      = max verbose verbosity
+      | otherwise
+      = verbosity
 
     overrideVerbosity
-      | buildSettingBuildReports == DetailedReports = True
-      | isJust givenTemplate                        = True
-      | isParallelBuild                             = False
-      | otherwise                                   = False
+      | buildSettingBuildReports == DetailedReports
+      = True
+      | isJust givenTemplate
+      = True
+      | isParallelBuild
+      = False
+      | otherwise
+      = False
 
 
 ---------------------------------------------
@@ -344,20 +339,19 @@ resolveBuildTimeSettings verbosity
 findProjectRoot :: IO FilePath
 findProjectRoot = do
 
-    curdir  <- getCurrentDirectory
-    homedir <- getHomeDirectory
+  curdir  <- getCurrentDirectory
+  homedir <- getHomeDirectory
 
-    -- Search upwards. If we get to the users home dir or the filesystem root,
-    -- then use the current dir
-    let probe dir | isDrive dir || dir == homedir
-                  = return curdir -- implicit project root
-        probe dir = do
-          exists <- doesFileExist (dir </> "cabal.project")
-          if exists
-            then return dir       -- explicit project root
-            else probe (takeDirectory dir)
+  -- Search upwards. If we get to the users home dir or the filesystem root,
+  -- then use the current dir
+  let probe dir | isDrive dir || dir == homedir = return curdir -- implicit project root
+      probe dir                                 = do
+        exists <- doesFileExist (dir </> "cabal.project")
+        if exists
+          then return dir       -- explicit project root
+          else probe (takeDirectory dir)
 
-    probe curdir
+  probe curdir
    --TODO: [nice to have] add compat support for old style sandboxes
 
 
@@ -366,11 +360,11 @@ findProjectRoot = do
 --
 readProjectConfig :: Verbosity -> FilePath -> Rebuild ProjectConfig
 readProjectConfig verbosity projectRootDir = do
-    global <- readGlobalConfig verbosity
-    local  <- readProjectLocalConfig       verbosity projectRootDir
-    freeze <- readProjectLocalFreezeConfig verbosity projectRootDir
-    extra  <- readProjectLocalExtraConfig  verbosity projectRootDir
-    return (global <> local <> freeze <> extra)
+  global <- readGlobalConfig verbosity
+  local  <- readProjectLocalConfig verbosity projectRootDir
+  freeze <- readProjectLocalFreezeConfig verbosity projectRootDir
+  extra  <- readProjectLocalExtraConfig verbosity projectRootDir
+  return (global <> local <> freeze <> extra)
 
 
 -- | Reads an explicit @cabal.project@ file in the given project root dir,
@@ -386,22 +380,21 @@ readProjectLocalConfig verbosity projectRootDir = do
     else do
       monitorFiles [monitorNonExistentFile projectFile]
       return defaultImplicitProjectConfig
-
   where
     projectFile = projectRootDir </> "cabal.project"
     readProjectFile =
-          reportParseResult verbosity "project file" projectFile
-        . parseProjectConfig
-      =<< readFile projectFile
+      reportParseResult verbosity "project file" projectFile
+        .   parseProjectConfig
+        =<< readFile projectFile
 
     defaultImplicitProjectConfig :: ProjectConfig
-    defaultImplicitProjectConfig =
-      mempty {
+    defaultImplicitProjectConfig = mempty
+      {
         -- We expect a package in the current directory.
-        projectPackages         = [ "./*.cabal" ],
+        projectPackages         = ["./*.cabal"]
 
         -- This is to automatically pick up deps that we unpack locally.
-        projectPackagesOptional = [ "./*/*.cabal" ]
+      , projectPackagesOptional = ["./*/*.cabal"]
       }
 
 
@@ -411,8 +404,7 @@ readProjectLocalConfig verbosity projectRootDir = do
 --
 readProjectLocalExtraConfig :: Verbosity -> FilePath -> Rebuild ProjectConfig
 readProjectLocalExtraConfig verbosity =
-    readProjectExtensionFile verbosity "local"
-                             "project local configuration file"
+  readProjectExtensionFile verbosity "local" "project local configuration file"
 
 -- | Reads a @cabal.project.freeze@ file in the given project root dir,
 -- or returns empty. This file gets written by @cabal freeze@, or in
@@ -420,28 +412,29 @@ readProjectLocalExtraConfig verbosity =
 --
 readProjectLocalFreezeConfig :: Verbosity -> FilePath -> Rebuild ProjectConfig
 readProjectLocalFreezeConfig verbosity =
-    readProjectExtensionFile verbosity "freeze"
-                             "project freeze file"
+  readProjectExtensionFile verbosity "freeze" "project freeze file"
 
 -- | Reads a named config file in the given project root dir, or returns empty.
 --
-readProjectExtensionFile :: Verbosity -> String -> FilePath
-                         -> FilePath -> Rebuild ProjectConfig
-readProjectExtensionFile verbosity extensionName extensionDescription
-                         projectRootDir = do
+readProjectExtensionFile
+  :: Verbosity -> String -> FilePath -> FilePath -> Rebuild ProjectConfig
+readProjectExtensionFile verbosity extensionName extensionDescription projectRootDir
+  = do
     exists <- liftIO $ doesFileExist extensionFile
     if exists
-      then do monitorFiles [monitorFileHashed extensionFile]
-              liftIO readExtensionFile
-      else do monitorFiles [monitorNonExistentFile extensionFile]
-              return mempty
+      then do
+        monitorFiles [monitorFileHashed extensionFile]
+        liftIO readExtensionFile
+      else do
+        monitorFiles [monitorNonExistentFile extensionFile]
+        return mempty
   where
     extensionFile = projectRootDir </> "cabal.project" <.> extensionName
 
     readExtensionFile =
-          reportParseResult verbosity extensionDescription extensionFile
-        . parseProjectConfig
-      =<< readFile extensionFile
+      reportParseResult verbosity extensionDescription extensionFile
+        .   parseProjectConfig
+        =<< readFile extensionFile
 
 
 -- | Parse the 'ProjectConfig' format.
@@ -451,8 +444,7 @@ readProjectExtensionFile verbosity extensionName extensionDescription
 --
 parseProjectConfig :: String -> ParseResult ProjectConfig
 parseProjectConfig content =
-    convertLegacyProjectConfig <$>
-      parseLegacyProjectConfig content
+  convertLegacyProjectConfig <$> parseLegacyProjectConfig content
 
 
 -- | Render the 'ProjectConfig' format.
@@ -461,15 +453,14 @@ parseProjectConfig content =
 -- legacy configuration types, plus a conversion.
 --
 showProjectConfig :: ProjectConfig -> String
-showProjectConfig =
-    showLegacyProjectConfig . convertToLegacyProjectConfig
+showProjectConfig = showLegacyProjectConfig . convertToLegacyProjectConfig
 
 
 -- | Write a @cabal.project.local@ file in the given project root dir.
 --
 writeProjectLocalExtraConfig :: FilePath -> ProjectConfig -> IO ()
-writeProjectLocalExtraConfig projectRootDir =
-    writeProjectConfigFile projectExtraConfigFile
+writeProjectLocalExtraConfig projectRootDir = writeProjectConfigFile
+  projectExtraConfigFile
   where
     projectExtraConfigFile = projectRootDir </> "cabal.project.local"
 
@@ -477,8 +468,8 @@ writeProjectLocalExtraConfig projectRootDir =
 -- | Write a @cabal.project.freeze@ file in the given project root dir.
 --
 writeProjectLocalFreezeConfig :: FilePath -> ProjectConfig -> IO ()
-writeProjectLocalFreezeConfig projectRootDir =
-    writeProjectConfigFile projectFreezeConfigFile
+writeProjectLocalFreezeConfig projectRootDir = writeProjectConfigFile
+  projectFreezeConfigFile
   where
     projectFreezeConfigFile = projectRootDir </> "cabal.project.freeze"
 
@@ -486,32 +477,37 @@ writeProjectLocalFreezeConfig projectRootDir =
 -- | Write in the @cabal.project@ format to the given file.
 --
 writeProjectConfigFile :: FilePath -> ProjectConfig -> IO ()
-writeProjectConfigFile file =
-    writeFile file . showProjectConfig
+writeProjectConfigFile file = writeFile file . showProjectConfig
 
 
 -- | Read the user's @~/.cabal/config@ file.
 --
 readGlobalConfig :: Verbosity -> Rebuild ProjectConfig
 readGlobalConfig verbosity = do
-    config     <- liftIO (loadConfig verbosity mempty)
-    configFile <- liftIO defaultConfigFile
-    monitorFiles [monitorFileHashed configFile]
-    return (convertLegacyGlobalConfig config)
+  config     <- liftIO (loadConfig verbosity mempty)
+  configFile <- liftIO defaultConfigFile
+  monitorFiles [monitorFileHashed configFile]
+  return (convertLegacyGlobalConfig config)
     --TODO: do this properly, there's several possible locations
     -- and env vars, and flags for selecting the global config
 
 
 reportParseResult :: Verbosity -> String -> FilePath -> ParseResult a -> IO a
 reportParseResult verbosity _filetype filename (ParseOk warnings x) = do
-    unless (null warnings) $
-      let msg = unlines (map (showPWarning filename) warnings)
-       in warn verbosity msg
-    return x
+  unless (null warnings)
+    $ let msg = unlines (map (showPWarning filename) warnings)
+      in  warn verbosity msg
+  return x
 reportParseResult _verbosity filetype filename (ParseFailed err) =
-    let (line, msg) = locatedErrorMsg err
-     in die $ "Error parsing " ++ filetype ++ " " ++ filename
-           ++ maybe "" (\n -> ':' : show n) line ++ ":\n" ++ msg
+  let (line, msg) = locatedErrorMsg err
+  in  die
+        $  "Error parsing "
+        ++ filetype
+        ++ " "
+        ++ filename
+        ++ maybe "" (\n -> ':' : show n) line
+        ++ ":\n"
+        ++ msg
 
 
 ---------------------------------------------
@@ -562,36 +558,36 @@ data BadPackageLocationMatch
 --
 -- Throws 'BadPackageLocations'.
 --
-findProjectPackages :: FilePath -> ProjectConfig
-                    -> Rebuild [ProjectPackageLocation]
-findProjectPackages projectRootDir ProjectConfig{..} = do
+findProjectPackages
+  :: FilePath -> ProjectConfig -> Rebuild [ProjectPackageLocation]
+findProjectPackages projectRootDir ProjectConfig {..} = do
 
-    requiredPkgs <- findPackageLocations True    projectPackages
-    optionalPkgs <- findPackageLocations False   projectPackagesOptional
-    let repoPkgs  = map ProjectPackageRemoteRepo projectPackagesRepo
-        namedPkgs = map ProjectPackageNamed      projectPackagesNamed
+  requiredPkgs <- findPackageLocations True projectPackages
+  optionalPkgs <- findPackageLocations False projectPackagesOptional
+  let repoPkgs  = map ProjectPackageRemoteRepo projectPackagesRepo
+      namedPkgs = map ProjectPackageNamed projectPackagesNamed
 
-    return (concat [requiredPkgs, optionalPkgs, repoPkgs, namedPkgs])
+  return (concat [requiredPkgs, optionalPkgs, repoPkgs, namedPkgs])
   where
     findPackageLocations required pkglocstr = do
       (problems, pkglocs) <-
         partitionEithers <$> mapM (findPackageLocation required) pkglocstr
-      unless (null problems) $
-        liftIO $ throwIO $ BadPackageLocations problems
+      unless (null problems) $ liftIO $ throwIO $ BadPackageLocations problems
       return (concat pkglocs)
 
 
-    findPackageLocation :: Bool -> String
-                        -> Rebuild (Either BadPackageLocation
-                                          [ProjectPackageLocation])
+    findPackageLocation
+      :: Bool
+      -> String
+      -> Rebuild (Either BadPackageLocation [ProjectPackageLocation])
     findPackageLocation _required@True pkglocstr =
       -- strategy: try first as a file:// or http(s):// URL.
       -- then as a file glob (usually encompassing single file)
       -- finally as a single file, for files that fail to parse as globs
-                    checkIsUriPackage pkglocstr
-      `mplusMaybeT` checkIsFileGlobPackage pkglocstr
-      `mplusMaybeT` checkIsSingleFilePackage pkglocstr
-      >>= maybe (return (Left (BadLocUnrecognised pkglocstr))) return
+      checkIsUriPackage pkglocstr
+        `mplusMaybeT` checkIsFileGlobPackage pkglocstr
+        `mplusMaybeT` checkIsSingleFilePackage pkglocstr
+        >>= maybe (return (Left (BadLocUnrecognised pkglocstr))) return
 
 
     findPackageLocation _required@False pkglocstr = do
@@ -599,53 +595,46 @@ findProjectPackages projectRootDir ProjectConfig{..} = do
       res <- checkIsFileGlobPackage pkglocstr
       case res of
         Nothing              -> return (Left (BadLocUnrecognised pkglocstr))
-        Just (Left _)        -> return (Right []) -- it's optional
+        Just (Left  _      ) -> return (Right []) -- it's optional
         Just (Right pkglocs) -> return (Right pkglocs)
 
 
     checkIsUriPackage, checkIsFileGlobPackage, checkIsSingleFilePackage
-      :: String -> Rebuild (Maybe (Either BadPackageLocation
-                                         [ProjectPackageLocation]))
-    checkIsUriPackage pkglocstr =
-      return $!
-      case parseAbsoluteURI pkglocstr of
-        Just uri@URI {
-            uriScheme    = scheme,
-            uriAuthority = Just URIAuth { uriRegName = host }
-          }
-          | recognisedScheme && not (null host) ->
-            Just (Right [ProjectPackageRemoteTarball uri])
+      :: String
+      -> Rebuild (Maybe (Either BadPackageLocation [ProjectPackageLocation]))
+    checkIsUriPackage pkglocstr = return $! case parseAbsoluteURI pkglocstr of
+      Just uri@URI { uriScheme = scheme, uriAuthority = Just URIAuth { uriRegName = host } }
+        | recognisedScheme && not (null host)
+        -> Just (Right [ProjectPackageRemoteTarball uri])
+        | not recognisedScheme && not (null host)
+        -> Just (Left (BadLocUnexpectedUriScheme pkglocstr))
+        | recognisedScheme && null host
+        -> Just (Left (BadLocUnrecognisedUri pkglocstr))
+        where
+          recognisedScheme =
+            scheme == "http:" || scheme == "https:" || scheme == "file:"
 
-          | not recognisedScheme && not (null host) ->
-            Just (Left (BadLocUnexpectedUriScheme pkglocstr))
-
-          | recognisedScheme && null host ->
-            Just (Left (BadLocUnrecognisedUri pkglocstr))
-          where
-            recognisedScheme = scheme == "http:" || scheme == "https:"
-                            || scheme == "file:"
-
-        _ -> Nothing
+      _ -> Nothing
 
 
-    checkIsFileGlobPackage pkglocstr =
-      case simpleParse pkglocstr of
-        Nothing   -> return Nothing
-        Just glob -> liftM Just $ do
-          matches <- matchFileGlob glob
-          case matches of
-            [] | isJust (isTrivialFilePathGlob glob)
-               -> return (Left (BadPackageLocationFile
-                                  (BadLocNonexistantFile pkglocstr)))
+    checkIsFileGlobPackage pkglocstr = case simpleParse pkglocstr of
+      Nothing   -> return Nothing
+      Just glob -> liftM Just $ do
+        matches <- matchFileGlob glob
+        case matches of
+          []
+            | isJust (isTrivialFilePathGlob glob)
+            -> return
+              (Left (BadPackageLocationFile (BadLocNonexistantFile pkglocstr)))
 
-            [] -> return (Left (BadLocGlobEmptyMatch pkglocstr))
+          [] -> return (Left (BadLocGlobEmptyMatch pkglocstr))
 
-            _  -> do
-              (failures, pkglocs) <- partitionEithers <$>
-                                     mapM checkFilePackageMatch matches
-              if null pkglocs
-                then return (Left (BadLocGlobBadMatches pkglocstr failures))
-                else return (Right pkglocs)
+          _  -> do
+            (failures, pkglocs) <- partitionEithers
+              <$> mapM checkFilePackageMatch matches
+            if null pkglocs
+              then return (Left (BadLocGlobBadMatches pkglocstr failures))
+              else return (Right pkglocs)
 
 
     checkIsSingleFilePackage pkglocstr = do
@@ -653,48 +642,47 @@ findProjectPackages projectRootDir ProjectConfig{..} = do
       isFile <- liftIO $ doesFileExist filename
       isDir  <- liftIO $ doesDirectoryExist filename
       if isFile || isDir
-        then checkFilePackageMatch pkglocstr
-         >>= either (return . Just . Left  . BadPackageLocationFile)
-                    (return . Just . Right . (\x->[x]))
+        then checkFilePackageMatch pkglocstr >>= either
+          (return . Just . Left . BadPackageLocationFile)
+          (return . Just . Right . (\x -> [x]))
         else return Nothing
 
 
-    checkFilePackageMatch :: String -> Rebuild (Either BadPackageLocationMatch
-                                                       ProjectPackageLocation)
+    checkFilePackageMatch
+      :: String
+      -> Rebuild (Either BadPackageLocationMatch ProjectPackageLocation)
     checkFilePackageMatch pkglocstr = do
       -- The pkglocstr may be absolute or may be relative to the project root.
       -- Either way, </> does the right thing here. We return relative paths if
       -- they were relative in the first place.
       let abspath = projectRootDir </> pkglocstr
-      isDir  <- liftIO $ doesDirectoryExist abspath
+      isDir           <- liftIO $ doesDirectoryExist abspath
       parentDirExists <- case takeDirectory abspath of
-                           []  -> return False
-                           dir -> liftIO $ doesDirectoryExist dir
+        []  -> return False
+        dir -> liftIO $ doesDirectoryExist dir
       case () of
-        _ | isDir
-         -> do matches <- matchFileGlob (globStarDotCabal pkglocstr)
-               case matches of
-                 [cabalFile]
-                     -> return (Right (ProjectPackageLocalDirectory
-                                         pkglocstr cabalFile))
-                 []  -> return (Left (BadLocDirNoCabalFile pkglocstr))
-                 _   -> return (Left (BadLocDirManyCabalFiles pkglocstr))
-
+        _
+          | isDir
+          -> do
+            matches <- matchFileGlob (globStarDotCabal pkglocstr)
+            case matches of
+              [cabalFile]
+                -> return
+                  (Right (ProjectPackageLocalDirectory pkglocstr cabalFile))
+              [] -> return (Left (BadLocDirNoCabalFile pkglocstr))
+              _  -> return (Left (BadLocDirManyCabalFiles pkglocstr))
           | extensionIsTarGz pkglocstr
-         -> return (Right (ProjectPackageLocalTarball pkglocstr))
-
+          -> return (Right (ProjectPackageLocalTarball pkglocstr))
           | takeExtension pkglocstr == ".cabal"
-         -> return (Right (ProjectPackageLocalCabalFile pkglocstr))
-
+          -> return (Right (ProjectPackageLocalCabalFile pkglocstr))
           | parentDirExists
-         -> return (Left (BadLocNonexistantFile pkglocstr))
-
+          -> return (Left (BadLocNonexistantFile pkglocstr))
           | otherwise
-         -> return (Left (BadLocUnexpectedFile pkglocstr))
+          -> return (Left (BadLocUnexpectedFile pkglocstr))
 
 
-    extensionIsTarGz f = takeExtension f                 == ".gz"
-                      && takeExtension (dropExtension f) == ".tar"
+    extensionIsTarGz f =
+      takeExtension f == ".gz" && takeExtension (dropExtension f) == ".tar"
 
 
 -- | A glob to find all the cabal files in a directory.
@@ -703,11 +691,12 @@ findProjectPackages projectRootDir ProjectConfig{..} = do
 -- The directory part can be either absolute or relative.
 --
 globStarDotCabal :: FilePath -> FilePathGlob
-globStarDotCabal dir =
-    FilePathGlob
-      (if isAbsolute dir then FilePathRoot root else FilePathRelative)
-      (foldr (\d -> GlobDir [Literal d])
-             (GlobFile [WildCard, Literal ".cabal"]) dirComponents)
+globStarDotCabal dir = FilePathGlob
+  (if isAbsolute dir then FilePathRoot root else FilePathRelative)
+  ( foldr (\d -> GlobDir [Literal d])
+          (GlobFile [WildCard, Literal ".cabal"])
+          dirComponents
+  )
   where
     (root, dirComponents) = fmap splitDirectories (splitDrive dir)
 
@@ -726,26 +715,27 @@ mplusMaybeT ma mb = do
 -- Note here is where we convert from project-root relative paths to absolute
 -- paths.
 --
-readSourcePackage :: Verbosity -> ProjectPackageLocation
-                  -> Rebuild UnresolvedSourcePackage
+readSourcePackage
+  :: Verbosity -> ProjectPackageLocation -> Rebuild UnresolvedSourcePackage
 readSourcePackage verbosity (ProjectPackageLocalCabalFile cabalFile) =
-    readSourcePackage verbosity (ProjectPackageLocalDirectory dir cabalFile)
+  readSourcePackage verbosity (ProjectPackageLocalDirectory dir cabalFile)
   where
     dir = takeDirectory cabalFile
 
 readSourcePackage verbosity (ProjectPackageLocalDirectory dir cabalFile) = do
-    monitorFiles [monitorFileHashed cabalFile]
-    root <- askRoot
-    pkgdesc <- liftIO $ readPackageDescription verbosity (root </> cabalFile)
-    return SourcePackage {
-      packageInfoId        = packageId pkgdesc,
-      packageDescription   = pkgdesc,
-      packageSource        = LocalUnpackedPackage (root </> dir),
-      packageDescrOverride = Nothing
+  monitorFiles [monitorFileHashed cabalFile]
+  root    <- askRoot
+  pkgdesc <- liftIO $ readPackageDescription verbosity (root </> cabalFile)
+  return SourcePackage
+    { packageInfoId        = packageId pkgdesc
+    , packageDescription   = pkgdesc
+    , packageSource        = LocalUnpackedPackage (root </> dir)
+    , packageDescrOverride = Nothing
     }
 readSourcePackage _verbosity _ =
-    fail $ "TODO: add support for fetching and reading local tarballs, remote "
-        ++ "tarballs, remote repos and passing named packages through"
+  fail
+    $  "TODO: add support for fetching and reading local tarballs, remote "
+    ++ "tarballs, remote repos and passing named packages through"
 
 
 ---------------------------------------------
@@ -769,14 +759,16 @@ instance Exception BadPerPackageCompilerPaths
 --
 -- Throws 'BadPerPackageCompilerPaths'
 --
-checkBadPerPackageCompilerPaths :: [ConfiguredProgram]
-                                -> Map PackageName PackageConfig
-                                -> IO ()
+checkBadPerPackageCompilerPaths
+  :: [ConfiguredProgram] -> Map PackageName PackageConfig -> IO ()
 checkBadPerPackageCompilerPaths compilerPrograms packagesConfig =
-    case [ (pkgname, progname)
-         | let compProgNames = Set.fromList (map programId compilerPrograms)
-         ,  (pkgname, pkgconf) <- Map.toList packagesConfig
-         , progname <- Map.keys (getMapLast (packageConfigProgramPaths pkgconf))
-         , progname `Set.member` compProgNames ] of
+  case
+      [ (pkgname, progname)
+      | let compProgNames = Set.fromList (map programId compilerPrograms)
+      , (pkgname, pkgconf) <- Map.toList packagesConfig
+      , progname <- Map.keys (getMapLast (packageConfigProgramPaths pkgconf))
+      , progname `Set.member` compProgNames
+      ]
+    of
       [] -> return ()
       ps -> throwIO (BadPerPackageCompilerPaths ps)

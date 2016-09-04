@@ -32,25 +32,32 @@ import Distribution.System
 -- | Ties the two worlds together: classic cabal-install vs. the modular
 -- solver. Performs the necessary translations before and after.
 modularResolver :: SolverConfig -> DependencyResolver loc
-modularResolver sc (Platform arch os) cinfo iidx sidx pkgConfigDB pprefs pcs pns =
-  fmap (uncurry postprocess)      $ -- convert install plan
-  logToProgress (maxBackjumps sc) $ -- convert log format into progress format
-  solve sc cinfo idx pkgConfigDB pprefs gcs pns
-    where
+modularResolver sc (Platform arch os) cinfo iidx sidx pkgConfigDB pprefs pcs pns
+  = fmap (uncurry postprocess) $ -- convert install plan
+                                 logToProgress (maxBackjumps sc) $ -- convert log format into progress format
+                                                                   solve
+    sc
+    cinfo
+    idx
+    pkgConfigDB
+    pprefs
+    gcs
+    pns
+  where
       -- Indices have to be converted into solver-specific uniform index.
-      idx    = convPIs os arch cinfo (shadowPkgs sc) (strongFlags sc) iidx sidx
-      -- Constraints have to be converted into a finite map indexed by PN.
-      gcs    = M.fromListWith (++) (map pair pcs)
-        where
-          pair lpc = (pcName $ unlabelPackageConstraint lpc, [lpc])
+    idx = convPIs os arch cinfo (shadowPkgs sc) (strongFlags sc) iidx sidx
+    -- Constraints have to be converted into a finite map indexed by PN.
+    gcs = M.fromListWith (++) (map pair pcs)
+      where
+        pair lpc = (pcName $ unlabelPackageConstraint lpc, [lpc])
 
-      -- Results have to be converted into an install plan.
-      postprocess a rdm = map (convCP iidx sidx) (toCPs a rdm)
+    -- Results have to be converted into an install plan.
+    postprocess a rdm = map (convCP iidx sidx) (toCPs a rdm)
 
-      -- Helper function to extract the PN from a constraint.
-      pcName :: PackageConstraint -> PN
-      pcName (PackageConstraintVersion   pn _) = pn
-      pcName (PackageConstraintInstalled pn  ) = pn
-      pcName (PackageConstraintSource    pn  ) = pn
-      pcName (PackageConstraintFlags     pn _) = pn
-      pcName (PackageConstraintStanzas   pn _) = pn
+    -- Helper function to extract the PN from a constraint.
+    pcName :: PackageConstraint -> PN
+    pcName (PackageConstraintVersion pn _) = pn
+    pcName (PackageConstraintInstalled pn) = pn
+    pcName (PackageConstraintSource    pn) = pn
+    pcName (PackageConstraintFlags   pn _) = pn
+    pcName (PackageConstraintStanzas pn _) = pn

@@ -86,114 +86,125 @@ import Data.Maybe (isJust, fromMaybe)
 -- | Choose the Cabal version such that the setup scripts compiled against this
 -- version will support the given command-line flags.
 chooseCabalVersion :: ConfigFlags -> Maybe Version -> VersionRange
-chooseCabalVersion configFlags maybeVersion =
-  maybe defaultVersionRange thisVersion maybeVersion
+chooseCabalVersion configFlags maybeVersion = maybe defaultVersionRange
+                                                    thisVersion
+                                                    maybeVersion
   where
     -- Cabal < 1.19.2 doesn't support '--exact-configuration' which is needed
     -- for '--allow-newer' to work.
-    allowNewer = isRelaxDeps
-                 (maybe RelaxDepsNone unAllowNewer $ configAllowNewer configFlags)
-    allowOlder = isRelaxDeps
-                 (maybe RelaxDepsNone unAllowOlder $ configAllowOlder configFlags)
+    allowNewer
+      = isRelaxDeps
+        (maybe RelaxDepsNone unAllowNewer $ configAllowNewer configFlags)
+    allowOlder
+      = isRelaxDeps
+        (maybe RelaxDepsNone unAllowOlder $ configAllowOlder configFlags)
 
     defaultVersionRange = if allowOlder || allowNewer
-                          then orLaterVersion (Version [1,19,2] [])
-                          else anyVersion
+      then orLaterVersion (Version [1, 19, 2] [])
+      else anyVersion
 
 -- | Configure the package found in the local directory
-configure :: Verbosity
-          -> PackageDBStack
-          -> RepoContext
-          -> Compiler
-          -> Platform
-          -> ProgramConfiguration
-          -> ConfigFlags
-          -> ConfigExFlags
-          -> [String]
-          -> IO ()
-configure verbosity packageDBs repoCtxt comp platform conf
-  configFlags configExFlags extraArgs = do
+configure
+  :: Verbosity
+  -> PackageDBStack
+  -> RepoContext
+  -> Compiler
+  -> Platform
+  -> ProgramConfiguration
+  -> ConfigFlags
+  -> ConfigExFlags
+  -> [String]
+  -> IO ()
+configure verbosity packageDBs repoCtxt comp platform conf configFlags configExFlags extraArgs
+  = do
 
-  installedPkgIndex <- getInstalledPackages verbosity comp packageDBs conf
-  sourcePkgDb       <- getSourcePackages    verbosity repoCtxt
-  pkgConfigDb       <- readPkgConfigDb      verbosity conf
+    installedPkgIndex <- getInstalledPackages verbosity comp packageDBs conf
+    sourcePkgDb       <- getSourcePackages verbosity repoCtxt
+    pkgConfigDb       <- readPkgConfigDb verbosity conf
 
-  checkConfigExFlags verbosity installedPkgIndex
-                     (packageIndex sourcePkgDb) configExFlags
+    checkConfigExFlags verbosity
+                       installedPkgIndex
+                       (packageIndex sourcePkgDb)
+                       configExFlags
 
-  progress <- planLocalPackage verbosity comp platform configFlags configExFlags
-                               installedPkgIndex sourcePkgDb pkgConfigDb
+    progress <- planLocalPackage verbosity
+                                 comp
+                                 platform
+                                 configFlags
+                                 configExFlags
+                                 installedPkgIndex
+                                 sourcePkgDb
+                                 pkgConfigDb
 
-  notice verbosity "Resolving dependencies..."
-  maybePlan <- foldProgress logMsg (return . Left) (return . Right)
-                            progress
-  case maybePlan of
-    Left message -> do
-      warn verbosity $
-           "solver failed to find a solution:\n"
-        ++ message
-        ++ "Trying configure anyway."
-      setupWrapper verbosity (setupScriptOptions installedPkgIndex Nothing)
-        Nothing configureCommand (const configFlags) extraArgs
+    notice verbosity "Resolving dependencies..."
+    maybePlan <- foldProgress logMsg (return . Left) (return . Right) progress
+    case maybePlan of
+      Left message -> do
+        warn verbosity
+          $  "solver failed to find a solution:\n"
+          ++ message
+          ++ "Trying configure anyway."
+        setupWrapper verbosity
+                     (setupScriptOptions installedPkgIndex Nothing)
+                     Nothing
+                     configureCommand
+                     (const configFlags)
+                     extraArgs
 
-    Right installPlan0 ->
-     let installPlan = InstallPlan.configureInstallPlan installPlan0
-     in case fst (InstallPlan.ready installPlan) of
-      [pkg@(ReadyPackage
-              (ConfiguredPackage _ (SourcePackage _ _ (LocalUnpackedPackage _) _)
-                                 _ _ _))] -> do
-        configurePackage verbosity
-          platform (compilerInfo comp)
-          (setupScriptOptions installedPkgIndex (Just pkg))
-          configFlags pkg extraArgs
+      Right installPlan0 ->
+        let
+          installPlan = InstallPlan.configureInstallPlan installPlan0
+        in
+          case fst (InstallPlan.ready installPlan) of
+            [pkg@(ReadyPackage (ConfiguredPackage _ (SourcePackage _ _ (LocalUnpackedPackage _) _) _ _ _))]
+              -> do
+                configurePackage
+                  verbosity
+                  platform
+                  (compilerInfo comp)
+                  (setupScriptOptions installedPkgIndex (Just pkg))
+                  configFlags
+                  pkg
+                  extraArgs
 
-      _ -> die $ "internal error: configure install plan should have exactly "
-              ++ "one local ready package."
-
+            _ ->
+              die
+                $  "internal error: configure install plan should have exactly "
+                ++ "one local ready package."
   where
-    setupScriptOptions :: InstalledPackageIndex
-                       -> Maybe ReadyPackage
-                       -> SetupScriptOptions
-    setupScriptOptions =
-      configureSetupScript
-        packageDBs
-        comp
-        platform
-        conf
-        (fromFlagOrDefault
-           (useDistPref defaultSetupScriptOptions)
-           (configDistPref configFlags))
-        (chooseCabalVersion
-           configFlags
-           (flagToMaybe (configCabalVersion configExFlags)))
-        Nothing
-        False
+    setupScriptOptions
+      :: InstalledPackageIndex -> Maybe ReadyPackage -> SetupScriptOptions
+    setupScriptOptions = configureSetupScript
+      packageDBs
+      comp
+      platform
+      conf
+      ( fromFlagOrDefault (useDistPref defaultSetupScriptOptions)
+                          (configDistPref configFlags)
+      )
+      ( chooseCabalVersion configFlags
+                           (flagToMaybe (configCabalVersion configExFlags))
+      )
+      Nothing
+      False
 
     logMsg message rest = debug verbosity message >> rest
 
-configureSetupScript :: PackageDBStack
-                     -> Compiler
-                     -> Platform
-                     -> ProgramConfiguration
-                     -> FilePath
-                     -> VersionRange
-                     -> Maybe Lock
-                     -> Bool
-                     -> InstalledPackageIndex
-                     -> Maybe ReadyPackage
-                     -> SetupScriptOptions
-configureSetupScript packageDBs
-                     comp
-                     platform
-                     conf
-                     distPref
-                     cabalVersion
-                     lock
-                     forceExternal
-                     index
-                     mpkg
-  = SetupScriptOptions {
-      useCabalVersion          = cabalVersion
+configureSetupScript
+  :: PackageDBStack
+  -> Compiler
+  -> Platform
+  -> ProgramConfiguration
+  -> FilePath
+  -> VersionRange
+  -> Maybe Lock
+  -> Bool
+  -> InstalledPackageIndex
+  -> Maybe ReadyPackage
+  -> SetupScriptOptions
+configureSetupScript packageDBs comp platform conf distPref cabalVersion lock forceExternal index mpkg
+  = SetupScriptOptions
+    { useCabalVersion          = cabalVersion
     , useCabalSpecVersion      = Nothing
     , useCompiler              = Just comp
     , usePlatform              = Just platform
@@ -213,8 +224,9 @@ configureSetupScript packageDBs
       -- know the version of Cabal at this point, but only find this there.
       -- Therefore, for now, we just leave this blank.
     , useDependencies          = fromMaybe [] explicitSetupDeps
-    , useDependenciesExclusive = not defaultSetupDeps && isJust explicitSetupDeps
-    , useVersionMacros         = not defaultSetupDeps && isJust explicitSetupDeps
+    , useDependenciesExclusive = not defaultSetupDeps
+      && isJust explicitSetupDeps
+    , useVersionMacros = not defaultSetupDeps && isJust explicitSetupDeps
     }
   where
     -- When we are compiling a legacy setup script without an explicit
@@ -223,14 +235,13 @@ configureSetupScript packageDBs
     -- a global install. However we also allow looking in a specific package
     -- db.
     packageDBs' :: PackageDBStack
-    index'      :: Maybe InstalledPackageIndex
-    (packageDBs', index') =
-      case packageDBs of
-        (GlobalPackageDB:dbs) | UserPackageDB `notElem` dbs
-                              , Nothing <- explicitSetupDeps
-            -> (GlobalPackageDB:UserPackageDB:dbs, Nothing)
-        -- but if the user is using an odd db stack, don't touch it
-        _otherwise -> (packageDBs, Just index)
+    index' :: Maybe InstalledPackageIndex
+    (packageDBs', index') = case packageDBs of
+      (GlobalPackageDB:dbs) | UserPackageDB `notElem` dbs, Nothing <-
+        explicitSetupDeps ->
+        (GlobalPackageDB : UserPackageDB : dbs, Nothing)
+      -- but if the user is using an odd db stack, don't touch it
+      _otherwise -> (packageDBs, Just index)
 
     maybeSetupBuildInfo :: Maybe PkgDesc.SetupBuildInfo
     maybeSetupBuildInfo = do
@@ -241,112 +252,136 @@ configureSetupScript packageDBs
     -- Was a default 'custom-setup' stanza added by 'cabal-install' itself? If
     -- so, 'setup-depends' must not be exclusive. See #3199.
     defaultSetupDeps :: Bool
-    defaultSetupDeps = maybe False PkgDesc.defaultSetupDepends
-                       maybeSetupBuildInfo
+    defaultSetupDeps =
+      maybe False PkgDesc.defaultSetupDepends maybeSetupBuildInfo
 
     explicitSetupDeps :: Maybe [(UnitId, PackageId)]
     explicitSetupDeps = do
       -- Check if there is an explicit setup stanza.
-      _buildInfo <- maybeSetupBuildInfo
+      _buildInfo        <- maybeSetupBuildInfo
       -- Return the setup dependencies computed by the solver
       ReadyPackage cpkg <- mpkg
-      return [ ( uid, srcid )
-             | ConfiguredId srcid uid <- CD.setupDeps (confPkgDeps cpkg)
-             ]
+      return
+        [ (uid, srcid)
+        | ConfiguredId srcid uid <- CD.setupDeps (confPkgDeps cpkg)
+        ]
 
 -- | Warn if any constraints or preferences name packages that are not in the
 -- source package index or installed package index.
-checkConfigExFlags :: Package pkg
-                   => Verbosity
-                   -> InstalledPackageIndex
-                   -> PackageIndex pkg
-                   -> ConfigExFlags
-                   -> IO ()
+checkConfigExFlags
+  :: Package pkg
+  => Verbosity
+  -> InstalledPackageIndex
+  -> PackageIndex pkg
+  -> ConfigExFlags
+  -> IO ()
 checkConfigExFlags verbosity installedPkgIndex sourcePkgIndex flags = do
-  unless (null unknownConstraints) $ warn verbosity $
-             "Constraint refers to an unknown package: "
-          ++ showConstraint (head unknownConstraints)
-  unless (null unknownPreferences) $ warn verbosity $
-             "Preference refers to an unknown package: "
-          ++ display (head unknownPreferences)
+  unless (null unknownConstraints)
+    $  warn verbosity
+    $  "Constraint refers to an unknown package: "
+    ++ showConstraint (head unknownConstraints)
+  unless (null unknownPreferences)
+    $  warn verbosity
+    $  "Preference refers to an unknown package: "
+    ++ display (head unknownPreferences)
   where
-    unknownConstraints = filter (unknown . userConstraintPackageName . fst) $
-                         configExConstraints flags
-    unknownPreferences = filter (unknown . \(Dependency name _) -> name) $
-                         configPreferences flags
+    unknownConstraints
+      = filter (unknown . userConstraintPackageName . fst)
+      $ configExConstraints flags
+    unknownPreferences =
+      filter (unknown . \(Dependency name _) -> name) $ configPreferences flags
     unknown pkg = null (lookupPackageName installedPkgIndex pkg)
-               && not (elemByPackageName sourcePkgIndex pkg)
+      && not (elemByPackageName sourcePkgIndex pkg)
     showConstraint (uc, src) =
-        display uc ++ " (" ++ showConstraintSource src ++ ")"
+      display uc ++ " (" ++ showConstraintSource src ++ ")"
 
 -- | Make an 'InstallPlan' for the unpacked package in the current directory,
 -- and all its dependencies.
 --
-planLocalPackage :: Verbosity -> Compiler
-                 -> Platform
-                 -> ConfigFlags -> ConfigExFlags
-                 -> InstalledPackageIndex
-                 -> SourcePackageDb
-                 -> PkgConfigDb
-                 -> IO (Progress String String SolverInstallPlan)
-planLocalPackage verbosity comp platform configFlags configExFlags
-  installedPkgIndex (SourcePackageDb _ packagePrefs) pkgConfigDb = do
-  pkg <- readPackageDescription verbosity =<< defaultPackageDesc verbosity
-  solver <- chooseSolver verbosity (fromFlag $ configSolver configExFlags)
-            (compilerInfo comp)
+planLocalPackage
+  :: Verbosity
+  -> Compiler
+  -> Platform
+  -> ConfigFlags
+  -> ConfigExFlags
+  -> InstalledPackageIndex
+  -> SourcePackageDb
+  -> PkgConfigDb
+  -> IO (Progress String String SolverInstallPlan)
+planLocalPackage verbosity comp platform configFlags configExFlags installedPkgIndex (SourcePackageDb _ packagePrefs) pkgConfigDb
+  = do
+    pkg    <- readPackageDescription verbosity =<< defaultPackageDesc verbosity
+    solver <- chooseSolver verbosity
+                           (fromFlag $ configSolver configExFlags)
+                           (compilerInfo comp)
 
-  let -- We create a local package and ask to resolve a dependency on it
-      localPkg = SourcePackage {
-        packageInfoId             = packageId pkg,
-        packageDescription        = pkg,
-        packageSource             = LocalUnpackedPackage ".",
-        packageDescrOverride      = Nothing
-      }
+    let -- We create a local package and ask to resolve a dependency on it
+      localPkg          = SourcePackage
+        { packageInfoId        = packageId pkg
+        , packageDescription   = pkg
+        , packageSource        = LocalUnpackedPackage "."
+        , packageDescrOverride = Nothing
+        }
 
-      testsEnabled = fromFlagOrDefault False $ configTests configFlags
-      benchmarksEnabled =
-        fromFlagOrDefault False $ configBenchmarks configFlags
+      testsEnabled      = fromFlagOrDefault False $ configTests configFlags
+      benchmarksEnabled = fromFlagOrDefault False $ configBenchmarks configFlags
 
       resolverParams =
-          removeLowerBounds
-          (fromMaybe (AllowOlder RelaxDepsNone) $ configAllowOlder configFlags)
-        . removeUpperBounds
-          (fromMaybe (AllowNewer RelaxDepsNone) $ configAllowNewer configFlags)
+        removeLowerBounds
+            ( fromMaybe (AllowOlder RelaxDepsNone)
+            $ configAllowOlder configFlags
+            )
+          . removeUpperBounds
+              ( fromMaybe (AllowNewer RelaxDepsNone)
+              $ configAllowNewer configFlags
+              )
 
-        . addPreferences
+          . addPreferences
             -- preferences from the config file or command line
-            [ PackageVersionPreference name ver
-            | Dependency name ver <- configPreferences configExFlags ]
+              [ PackageVersionPreference name ver
+              | Dependency name ver <- configPreferences configExFlags
+              ]
 
-        . addConstraints
+          . addConstraints
             -- version constraints from the config file or command line
             -- TODO: should warn or error on constraints that are not on direct
             -- deps or flag constraints not on the package in question.
-            [ LabeledPackageConstraint (userToPackageConstraint uc) src
-            | (uc, src) <- configExConstraints configExFlags ]
+              [ LabeledPackageConstraint (userToPackageConstraint uc) src
+              | (uc, src) <- configExConstraints configExFlags
+              ]
 
-        . addConstraints
+          . addConstraints
             -- package flags from the config file or command line
-            [ let pc = PackageConstraintFlags (packageName pkg)
-                       (configConfigurationsFlags configFlags)
-              in LabeledPackageConstraint pc ConstraintSourceConfigFlagOrTarget
-            ]
+              [ let
+                  pc =
+                    PackageConstraintFlags
+                      (packageName pkg)
+                      (configConfigurationsFlags configFlags)
+                in
+                  LabeledPackageConstraint pc ConstraintSourceConfigFlagOrTarget
+              ]
 
-        . addConstraints
+          . addConstraints
             -- '--enable-tests' and '--enable-benchmarks' constraints from
             -- the config file or command line
-            [ let pc = PackageConstraintStanzas (packageName pkg) $
-                       [ TestStanzas  | testsEnabled ] ++
-                       [ BenchStanzas | benchmarksEnabled ]
-              in LabeledPackageConstraint pc ConstraintSourceConfigFlagOrTarget
-            ]
+              [ let pc =
+                      PackageConstraintStanzas (packageName pkg)
+                        $  [ TestStanzas | testsEnabled ]
+                        ++ [ BenchStanzas | benchmarksEnabled ]
+                in  LabeledPackageConstraint pc ConstraintSourceConfigFlagOrTarget
+              ]
 
-        $ standardInstallPolicy
-            installedPkgIndex
-            (SourcePackageDb mempty packagePrefs)
-            [SpecificSourcePackage localPkg]
+          $ standardInstallPolicy installedPkgIndex
+                                  (SourcePackageDb mempty packagePrefs)
+                                  [SpecificSourcePackage localPkg]
 
-  return (resolveDependencies platform (compilerInfo comp) pkgConfigDb solver resolverParams)
+    return
+      ( resolveDependencies platform
+                            (compilerInfo comp)
+                            pkgConfigDb
+                            solver
+                            resolverParams
+      )
 
 
 -- | Call an installer for an 'SourcePackage' but override the configure
@@ -357,41 +392,52 @@ planLocalPackage verbosity comp platform configFlags configExFlags
 --
 -- NB: when updating this function, don't forget to also update
 -- 'installReadyPackage' in D.C.Install.
-configurePackage :: Verbosity
-                 -> Platform -> CompilerInfo
-                 -> SetupScriptOptions
-                 -> ConfigFlags
-                 -> ReadyPackage
-                 -> [String]
-                 -> IO ()
-configurePackage verbosity platform comp scriptOptions configFlags
-                 (ReadyPackage (ConfiguredPackage ipid spkg flags stanzas deps))
-                 extraArgs =
-
-  setupWrapper verbosity
-    scriptOptions (Just pkg) configureCommand configureFlags extraArgs
-
+configurePackage
+  :: Verbosity
+  -> Platform
+  -> CompilerInfo
+  -> SetupScriptOptions
+  -> ConfigFlags
+  -> ReadyPackage
+  -> [String]
+  -> IO ()
+configurePackage verbosity platform comp scriptOptions configFlags (ReadyPackage (ConfiguredPackage ipid spkg flags stanzas deps)) extraArgs
+  = setupWrapper verbosity
+                 scriptOptions
+                 (Just pkg)
+                 configureCommand
+                 configureFlags
+                 extraArgs
   where
-    gpkg = packageDescription spkg
-    configureFlags   = filterConfigureFlags configFlags {
-      configIPID = toFlag (display ipid),
-      configConfigurationsFlags = flags,
+    gpkg           = packageDescription spkg
+    configureFlags = filterConfigureFlags configFlags
+      { configIPID                = toFlag (display ipid)
+      , configConfigurationsFlags = flags
       -- We generate the legacy constraints as well as the new style precise
       -- deps.  In the end only one set gets passed to Setup.hs configure,
       -- depending on the Cabal version we are talking to.
-      configConstraints  = [ thisPackageVersion srcid
-                           | ConfiguredId srcid _uid <- CD.nonSetupDeps deps ],
-      configDependencies = [ (packageName srcid, uid)
-                           | ConfiguredId srcid uid <- CD.nonSetupDeps deps ],
+      , configConstraints = [ thisPackageVersion srcid
+                            | ConfiguredId srcid _uid <- CD.nonSetupDeps deps
+                            ]
+      , configDependencies = [ (packageName srcid, uid)
+                             | ConfiguredId srcid uid <- CD.nonSetupDeps deps
+                             ]
       -- Use '--exact-configuration' if supported.
-      configExactConfiguration = toFlag True,
-      configVerbosity          = toFlag verbosity,
-      configBenchmarks         = toFlag (BenchStanzas `elem` stanzas),
-      configTests              = toFlag (TestStanzas `elem` stanzas)
-    }
+      , configExactConfiguration  = toFlag True
+      , configVerbosity           = toFlag verbosity
+      , configBenchmarks          = toFlag (BenchStanzas `elem` stanzas)
+      , configTests               = toFlag (TestStanzas `elem` stanzas)
+      }
 
-    pkg = case finalizePD flags (enableStanzas stanzas)
-           (const True)
-           platform comp [] gpkg of
-      Left _ -> error "finalizePD ReadyPackage failed"
-      Right (desc, _) -> desc
+    pkg =
+      case
+          finalizePD flags
+                     (enableStanzas stanzas)
+                     (const True)
+                     platform
+                     comp
+                     []
+                     gpkg
+        of
+          Left  _         -> error "finalizePD ReadyPackage failed"
+          Right (desc, _) -> desc

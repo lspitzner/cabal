@@ -73,22 +73,22 @@ delete = modifyWorld $ flip (deleteFirstsBy equalUDep)
 -- | WorldPkgInfo values are considered equal if they refer to
 -- the same package, i.e., we don't care about differing versions or flags.
 equalUDep :: WorldPkgInfo -> WorldPkgInfo -> Bool
-equalUDep (WorldPkgInfo (Dependency pkg1 _) _)
-          (WorldPkgInfo (Dependency pkg2 _) _) = pkg1 == pkg2
+equalUDep (WorldPkgInfo (Dependency pkg1 _) _) (WorldPkgInfo (Dependency pkg2 _) _)
+  = pkg1 == pkg2
 
 -- | Modifies the world file by applying an update-function ('unionBy'
 -- for 'insert', 'deleteFirstsBy' for 'delete') to the given list of
 -- packages. IO errors are considered non-fatal.
-modifyWorld :: ([WorldPkgInfo] -> [WorldPkgInfo]
-                -> [WorldPkgInfo])
+modifyWorld
+  :: ([WorldPkgInfo] -> [WorldPkgInfo] -> [WorldPkgInfo])
                         -- ^ Function that defines how
                         -- the list of user packages are merged with
                         -- existing world packages.
-            -> Verbosity
-            -> FilePath               -- ^ Location of the world file
-            -> [WorldPkgInfo] -- ^ list of user supplied packages
-            -> IO ()
-modifyWorld _ _         _     []   = return ()
+  -> Verbosity
+  -> FilePath               -- ^ Location of the world file
+  -> [WorldPkgInfo] -- ^ list of user supplied packages
+  -> IO ()
+modifyWorld _ _ _ [] = return ()
 modifyWorld f verbosity world pkgs =
   chattyTry "Error while updating world-file. " $ do
     pkgsOldWorld <- getContents world
@@ -96,14 +96,16 @@ modifyWorld f verbosity world pkgs =
     let pkgsNewWorld = nubBy equalUDep $ f pkgs pkgsOldWorld
     -- 'Dependency' is not an Ord instance, so we need to check for
     -- equivalence the awkward way:
-    if not (all (`elem` pkgsOldWorld) pkgsNewWorld &&
-            all (`elem` pkgsNewWorld) pkgsOldWorld)
+    if not
+         (  all (`elem`pkgsOldWorld) pkgsNewWorld
+         && all (`elem`pkgsNewWorld) pkgsOldWorld
+         )
       then do
         info verbosity "Updating world file..."
-        writeFileAtomic world . B.pack $ unlines
-            [ (display pkg) | pkg <- pkgsNewWorld]
-      else
-        info verbosity "World file is already up to date."
+        writeFileAtomic world
+          . B.pack
+          $ unlines [ (display pkg) | pkg <- pkgsNewWorld ]
+      else info verbosity "World file is already up to date."
 
 
 -- | Returns the content of the world file as a list
@@ -115,11 +117,14 @@ getContents world = do
     Nothing -> die "Could not parse world file."
     Just xs -> return xs
   where
-  safelyReadFile :: FilePath -> IO B.ByteString
-  safelyReadFile file = B.readFile file `catchIO` handler
-    where
-      handler e | isDoesNotExistError e = return B.empty
-                | otherwise             = ioError e
+    safelyReadFile :: FilePath -> IO B.ByteString
+    safelyReadFile file = B.readFile file `catchIO` handler
+      where
+        handler e
+          | isDoesNotExistError e
+          = return B.empty
+          | otherwise
+          = ioError e
 
 
 instance Text WorldPkgInfo where

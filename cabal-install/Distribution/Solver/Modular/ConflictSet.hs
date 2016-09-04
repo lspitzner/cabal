@@ -80,92 +80,99 @@ showCS = intercalate ", " . map showVar . toList
 toList :: ConflictSet qpn -> [Var qpn]
 toList = S.toList . conflictSetToSet
 
-union ::
+union
+  :: 
 #ifdef DEBUG_CONFLICT_SETS
   (?loc :: CallStack) =>
 #endif
-  Ord qpn => ConflictSet qpn -> ConflictSet qpn -> ConflictSet qpn
-union cs cs' = CS {
-      conflictSetToSet = S.union (conflictSetToSet cs) (conflictSetToSet cs')
+     Ord qpn => ConflictSet qpn -> ConflictSet qpn -> ConflictSet qpn
+union cs cs' = CS
+  { conflictSetToSet = S.union (conflictSetToSet cs) (conflictSetToSet cs')
 #ifdef DEBUG_CONFLICT_SETS
     , conflictSetOrigin = Node ?loc (map conflictSetOrigin [cs, cs'])
 #endif
-    }
+  }
 
-unions ::
+unions
+  :: 
 #ifdef DEBUG_CONFLICT_SETS
   (?loc :: CallStack) =>
 #endif
-  Ord qpn => [ConflictSet qpn] -> ConflictSet qpn
-unions css = CS {
-      conflictSetToSet = S.unions (map conflictSetToSet css)
+     Ord qpn => [ConflictSet qpn] -> ConflictSet qpn
+unions css = CS
+  { conflictSetToSet = S.unions (map conflictSetToSet css)
 #ifdef DEBUG_CONFLICT_SETS
     , conflictSetOrigin = Node ?loc (map conflictSetOrigin css)
 #endif
-    }
+  }
 
-insert ::
+insert
+  :: 
 #ifdef DEBUG_CONFLICT_SETS
   (?loc :: CallStack) =>
 #endif
-  Ord qpn => Var qpn -> ConflictSet qpn -> ConflictSet qpn
-insert var cs = CS {
-      conflictSetToSet = S.insert (simplifyVar var) (conflictSetToSet cs)
+     Ord qpn => Var qpn -> ConflictSet qpn -> ConflictSet qpn
+insert var cs = CS
+  { conflictSetToSet = S.insert (simplifyVar var) (conflictSetToSet cs)
 #ifdef DEBUG_CONFLICT_SETS
     , conflictSetOrigin = Node ?loc [conflictSetOrigin cs]
 #endif
-    }
+  }
 
-empty ::
+empty
+  :: 
 #ifdef DEBUG_CONFLICT_SETS
   (?loc :: CallStack) =>
 #endif
-  ConflictSet qpn
-empty = CS {
-      conflictSetToSet = S.empty
+     ConflictSet qpn
+empty = CS
+  { conflictSetToSet = S.empty
 #ifdef DEBUG_CONFLICT_SETS
     , conflictSetOrigin = Node ?loc []
 #endif
-    }
+  }
 
-singleton ::
+singleton
+  :: 
 #ifdef DEBUG_CONFLICT_SETS
   (?loc :: CallStack) =>
 #endif
-  Var qpn -> ConflictSet qpn
-singleton var = CS {
-      conflictSetToSet = S.singleton (simplifyVar var)
+     Var qpn -> ConflictSet qpn
+singleton var = CS
+  { conflictSetToSet = S.singleton (simplifyVar var)
 #ifdef DEBUG_CONFLICT_SETS
     , conflictSetOrigin = Node ?loc []
 #endif
-    }
+  }
 
 member :: Ord qpn => Var qpn -> ConflictSet qpn -> Bool
 member var = S.member (simplifyVar var) . conflictSetToSet
 
-filter ::
+filter
+  :: 
 #ifdef DEBUG_CONFLICT_SETS
   (?loc :: CallStack) =>
 #endif
 #if !MIN_VERSION_containers(0,5,0)
   Ord qpn =>
 #endif
-  (Var qpn -> Bool) -> ConflictSet qpn -> ConflictSet qpn
-filter p cs = CS {
-      conflictSetToSet = S.filter p (conflictSetToSet cs)
+     (Var qpn -> Bool) -> ConflictSet qpn -> ConflictSet qpn
+filter p cs = CS
+  { conflictSetToSet = S.filter p (conflictSetToSet cs)
 #ifdef DEBUG_CONFLICT_SETS
     , conflictSetOrigin = Node ?loc [conflictSetOrigin cs]
 #endif
-    }
+  }
 
-fromList ::
+fromList
+  :: 
 #ifdef DEBUG_CONFLICT_SETS
   (?loc :: CallStack) =>
 #endif
-  Ord qpn => [Var qpn] -> ConflictSet qpn
-fromList vars = CS {
-      conflictSetToSet = S.fromList (map simplifyVar vars)
+     Ord qpn => [Var qpn] -> ConflictSet qpn
+fromList vars = CS
+  { conflictSetToSet = S.fromList (map simplifyVar vars)
 #ifdef DEBUG_CONFLICT_SETS
     , conflictSetOrigin = Node ?loc []
 #endif
-    }
+  }

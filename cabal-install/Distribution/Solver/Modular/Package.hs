@@ -53,16 +53,16 @@ data I = I Ver Loc
 
 -- | String representation of an instance.
 showI :: I -> String
-showI (I v InRepo)   = showVer v
+showI (I v InRepo    ) = showVer v
 showI (I v (Inst uid)) = showVer v ++ "/installed" ++ shortId uid
   where
     -- A hack to extract the beginning of the package ABI hash
-    shortId (SimpleUnitId (ComponentId i))
-            = snip (splitAt 4) (++ "...")
-            . snip ((\ (x, y) -> (reverse x, y)) . break (=='-') . reverse) ('-':)
-            $ i
+    shortId (SimpleUnitId (ComponentId i)) =
+      snip (splitAt 4) (++"...")
+        . snip ((\(x, y) -> (reverse x, y)) . break (=='-') . reverse) ('-':)
+        $ i
     snip p f xs = case p xs of
-                    (ys, zs) -> (if L.null zs then id else f) ys
+      (ys, zs) -> (if L.null zs then id else f) ys
 
 -- | Package instance. A package name and an instance.
 data PI qpn = PI qpn I
@@ -89,6 +89,8 @@ primaryPP (PackagePath _ns q) = go q
 -- | Create artificial parents for each of the package names, making
 -- them all independent.
 makeIndependent :: [PN] -> [QPN]
-makeIndependent ps = [ Q pp pn | (pn, i) <- zip ps [0::Int ..]
-                               , let pp = PackagePath (Independent i) Unqualified
-                     ]
+makeIndependent ps =
+  [ Q pp pn
+  | (pn, i) <- zip ps [0 :: Int ..]
+  , let pp = PackagePath (Independent i) Unqualified
+  ]

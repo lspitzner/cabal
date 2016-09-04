@@ -112,28 +112,28 @@ data TreeF a b =
   deriving (Functor, Foldable, Traversable)
 
 out :: Tree a -> TreeF a (Tree a)
-out (PChoice    p i     ts) = PChoiceF    p i     ts
-out (FChoice    p i b m ts) = FChoiceF    p i b m ts
-out (SChoice    p i b   ts) = SChoiceF    p i b   ts
-out (GoalChoice         ts) = GoalChoiceF         ts
-out (Done       x         ) = DoneF       x
-out (Fail       c x       ) = FailF       c x
+out (PChoice p i ts    ) = PChoiceF p i ts
+out (FChoice p i b m ts) = FChoiceF p i b m ts
+out (SChoice p i b ts  ) = SChoiceF p i b ts
+out (GoalChoice ts     ) = GoalChoiceF ts
+out (Done       x      ) = DoneF x
+out (Fail c x          ) = FailF c x
 
 inn :: TreeF a (Tree a) -> Tree a
-inn (PChoiceF    p i     ts) = PChoice    p i     ts
-inn (FChoiceF    p i b m ts) = FChoice    p i b m ts
-inn (SChoiceF    p i b   ts) = SChoice    p i b   ts
-inn (GoalChoiceF         ts) = GoalChoice         ts
-inn (DoneF       x         ) = Done       x
-inn (FailF       c x       ) = Fail       c x
+inn (PChoiceF p i ts    ) = PChoice p i ts
+inn (FChoiceF p i b m ts) = FChoice p i b m ts
+inn (SChoiceF p i b ts  ) = SChoice p i b ts
+inn (GoalChoiceF ts     ) = GoalChoice ts
+inn (DoneF       x      ) = Done x
+inn (FailF c x          ) = Fail c x
 
 innM :: Monad m => TreeF a (m (Tree a)) -> m (Tree a)
-innM (PChoiceF    p i     ts) = liftM (PChoice    p i    ) (sequence ts)
-innM (FChoiceF    p i b m ts) = liftM (FChoice    p i b m) (sequence ts)
-innM (SChoiceF    p i b   ts) = liftM (SChoice    p i b  ) (sequence ts)
-innM (GoalChoiceF         ts) = liftM (GoalChoice        ) (sequence ts)
-innM (DoneF       x         ) = return $ Done     x
-innM (FailF       c x       ) = return $ Fail     c x
+innM (PChoiceF p i ts    ) = liftM (PChoice p i) (sequence ts)
+innM (FChoiceF p i b m ts) = liftM (FChoice p i b m) (sequence ts)
+innM (SChoiceF p i b ts  ) = liftM (SChoice p i b) (sequence ts)
+innM (GoalChoiceF ts     ) = liftM (GoalChoice) (sequence ts)
+innM (DoneF       x      ) = return $ Done x
+innM (FailF c x          ) = return $ Fail c x
 
 -- | Determines whether a tree is active, i.e., isn't a failure node.
 active :: Tree a -> Bool
@@ -143,30 +143,30 @@ active _          = True
 -- | Determines how many active choices are available in a node. Note that we
 -- count goal choices as having one choice, always.
 choices :: Tree a -> Int
-choices (PChoice    _ _     ts) = P.length (P.filter active ts)
-choices (FChoice    _ _ _ _ ts) = P.length (P.filter active ts)
-choices (SChoice    _ _ _   ts) = P.length (P.filter active ts)
-choices (GoalChoice         _ ) = 1
-choices (Done       _         ) = 1
-choices (Fail       _ _       ) = 0
+choices (PChoice _ _ ts    ) = P.length (P.filter active ts)
+choices (FChoice _ _ _ _ ts) = P.length (P.filter active ts)
+choices (SChoice _ _ _ ts  ) = P.length (P.filter active ts)
+choices (GoalChoice _      ) = 1
+choices (Done       _      ) = 1
+choices (Fail _ _          ) = 0
 
 -- | Variant of 'choices' that only approximates the number of choices.
 dchoices :: Tree a -> P.Degree
-dchoices (PChoice    _ _     ts) = P.degree (P.filter active ts)
-dchoices (FChoice    _ _ _ _ ts) = P.degree (P.filter active ts)
-dchoices (SChoice    _ _ _   ts) = P.degree (P.filter active ts)
-dchoices (GoalChoice         _ ) = P.ZeroOrOne
-dchoices (Done       _         ) = P.ZeroOrOne
-dchoices (Fail       _ _       ) = P.ZeroOrOne
+dchoices (PChoice _ _ ts    ) = P.degree (P.filter active ts)
+dchoices (FChoice _ _ _ _ ts) = P.degree (P.filter active ts)
+dchoices (SChoice _ _ _ ts  ) = P.degree (P.filter active ts)
+dchoices (GoalChoice _      ) = P.ZeroOrOne
+dchoices (Done       _      ) = P.ZeroOrOne
+dchoices (Fail _ _          ) = P.ZeroOrOne
 
 -- | Variant of 'choices' that only approximates the number of choices.
 zeroOrOneChoices :: Tree a -> Bool
-zeroOrOneChoices (PChoice    _ _     ts) = P.isZeroOrOne (P.filter active ts)
-zeroOrOneChoices (FChoice    _ _ _ _ ts) = P.isZeroOrOne (P.filter active ts)
-zeroOrOneChoices (SChoice    _ _ _   ts) = P.isZeroOrOne (P.filter active ts)
-zeroOrOneChoices (GoalChoice         _ ) = True
-zeroOrOneChoices (Done       _         ) = True
-zeroOrOneChoices (Fail       _ _       ) = True
+zeroOrOneChoices (PChoice _ _ ts    ) = P.isZeroOrOne (P.filter active ts)
+zeroOrOneChoices (FChoice _ _ _ _ ts) = P.isZeroOrOne (P.filter active ts)
+zeroOrOneChoices (SChoice _ _ _ ts  ) = P.isZeroOrOne (P.filter active ts)
+zeroOrOneChoices (GoalChoice _      ) = True
+zeroOrOneChoices (Done       _      ) = True
+zeroOrOneChoices (Fail _ _          ) = True
 
 -- | Catamorphism on trees.
 cata :: (TreeF a b -> b) -> Tree a -> b
@@ -177,7 +177,7 @@ trav psi x = cata (inn . psi) x
 
 -- | Paramorphism on trees.
 para :: (TreeF a (b, Tree a) -> b) -> Tree a -> b
-para phi = phi . fmap (\ x -> (para phi x, x)) . out
+para phi = phi . fmap (\x -> (para phi x, x)) . out
 
 -- | Anamorphism on trees.
 ana :: (b -> TreeF a b) -> b -> Tree a

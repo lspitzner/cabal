@@ -19,15 +19,15 @@ detectCyclesPhase = cata go
   where
     -- The only node of interest is DoneF
     go :: TreeF a (Tree a) -> Tree a
-    go (PChoiceF qpn gr     cs) = PChoice qpn gr     cs
+    go (PChoiceF qpn gr cs    ) = PChoice qpn gr cs
     go (FChoiceF qfn gr w m cs) = FChoice qfn gr w m cs
-    go (SChoiceF qsn gr w   cs) = SChoice qsn gr w   cs
-    go (GoalChoiceF         cs) = GoalChoice         cs
-    go (FailF cs reason)        = Fail cs reason
+    go (SChoiceF qsn gr w cs  ) = SChoice qsn gr w cs
+    go (GoalChoiceF cs        ) = GoalChoice cs
+    go (FailF cs reason       ) = Fail cs reason
 
     -- We check for cycles only if we have actually found a solution
     -- This minimizes the number of cycle checks we do as cycles are rare
-    go (DoneF revDeps) = do
+    go (DoneF revDeps         ) = do
       case findCycles revDeps of
         Nothing     -> Done revDeps
         Just relSet -> Fail relSet CyclicDependencies
@@ -37,13 +37,12 @@ detectCyclesPhase = cata go
 -- node, check if the solution is cyclic. If it is, return the conflict set
 -- containing all decisions that could potentially break the cycle.
 findCycles :: RevDepMap -> Maybe (ConflictSet QPN)
-findCycles revDeps =
-    case cycles of
-      []  -> Nothing
-      c:_ -> Just $ CS.unions $ map (varToConflictSet . P) c
+findCycles revDeps = case cycles of
+  []  -> Nothing
+  c:_ -> Just $ CS.unions $ map (varToConflictSet . P) c
   where
     cycles :: [[QPN]]
-    cycles = [vs | Gr.CyclicSCC vs <- scc]
+    cycles = [ vs | Gr.CyclicSCC vs <- scc ]
 
     scc :: [SCC QPN]
     scc = Gr.stronglyConnComp . map aux . Map.toList $ revDeps

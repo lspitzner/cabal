@@ -100,22 +100,22 @@ instance Binary pkg => Binary (PackageIndex pkg)
 invariant :: Package pkg => PackageIndex pkg -> Bool
 invariant (PackageIndex m) = all (uncurry goodBucket) (Map.toList m)
   where
-    goodBucket _    [] = False
+    goodBucket _    []           = False
     goodBucket name (pkg0:pkgs0) = check (packageId pkg0) pkgs0
       where
-        check pkgid []          = packageName pkgid == name
-        check pkgid (pkg':pkgs) = packageName pkgid == name
-                               && pkgid < pkgid'
-                               && check pkgid' pkgs
-          where pkgid' = packageId pkg'
+        check pkgid [] = packageName pkgid == name
+        check pkgid (pkg':pkgs) =
+          packageName pkgid == name && pkgid < pkgid' && check pkgid' pkgs
+          where
+            pkgid' = packageId pkg'
 
 --
 -- * Internal helpers
 --
 
 mkPackageIndex :: Package pkg => Map PackageName [pkg] -> PackageIndex pkg
-mkPackageIndex index = assert (invariant (PackageIndex index))
-                                         (PackageIndex index)
+mkPackageIndex index =
+  assert (invariant (PackageIndex index)) (PackageIndex index)
 
 internalError :: String -> a
 internalError name = error ("PackageIndex." ++ name ++ ": internal error")
@@ -135,20 +135,20 @@ lookup (PackageIndex m) name = fromMaybe [] $ Map.lookup name m
 -- If there are duplicates, later ones mask earlier ones.
 --
 fromList :: Package pkg => [pkg] -> PackageIndex pkg
-fromList pkgs = mkPackageIndex
-              . Map.map fixBucket
-              . Map.fromListWith (++)
-              $ [ (packageName pkg, [pkg])
-                | pkg <- pkgs ]
+fromList pkgs =
+  mkPackageIndex
+    . Map.map fixBucket
+    . Map.fromListWith (++)
+    $ [ (packageName pkg, [pkg]) | pkg <- pkgs ]
   where
     fixBucket = -- out of groups of duplicates, later ones mask earlier ones
                 -- but Map.fromListWith (++) constructs groups in reverse order
-                map head
+      map head
                 -- Eq instance for PackageIdentifier is wrong, so use Ord:
-              . groupBy (\a b -> EQ == comparing packageId a b)
+        . groupBy (\a b -> EQ == comparing packageId a b)
                 -- relies on sortBy being a stable sort so we
                 -- can pick consistently among duplicates
-              . sortBy (comparing packageId)
+        . sortBy (comparing packageId)
 
 --
 -- * Updates
@@ -161,18 +161,17 @@ fromList pkgs = mkPackageIndex
 --
 merge :: Package pkg => PackageIndex pkg -> PackageIndex pkg -> PackageIndex pkg
 merge i1@(PackageIndex m1) i2@(PackageIndex m2) =
-  assert (invariant i1 && invariant i2) $
-    mkPackageIndex (Map.unionWith mergeBuckets m1 m2)
+  assert (invariant i1 && invariant i2)
+    $ mkPackageIndex (Map.unionWith mergeBuckets m1 m2)
 
 -- | Elements in the second list mask those in the first.
 mergeBuckets :: Package pkg => [pkg] -> [pkg] -> [pkg]
-mergeBuckets []     ys     = ys
-mergeBuckets xs     []     = xs
-mergeBuckets xs@(x:xs') ys@(y:ys') =
-      case packageId x `compare` packageId y of
-        GT -> y : mergeBuckets xs  ys'
-        EQ -> y : mergeBuckets xs' ys'
-        LT -> x : mergeBuckets xs' ys
+mergeBuckets []         ys         = ys
+mergeBuckets xs         []         = xs
+mergeBuckets xs@(x:xs') ys@(y:ys') = case packageId x `compare` packageId y of
+  GT -> y : mergeBuckets xs ys'
+  EQ -> y : mergeBuckets xs' ys'
+  LT -> x : mergeBuckets xs' ys
 
 -- | Inserts a single package into the index.
 --
@@ -180,42 +179,49 @@ mergeBuckets xs@(x:xs') ys@(y:ys') =
 -- 'merge' with a singleton index.
 --
 insert :: Package pkg => pkg -> PackageIndex pkg -> PackageIndex pkg
-insert pkg (PackageIndex index) = mkPackageIndex $
-  Map.insertWith (\_ -> insertNoDup) (packageName pkg) [pkg] index
+insert pkg (PackageIndex index) =
+  mkPackageIndex
+    $ Map.insertWith (\_ -> insertNoDup) (packageName pkg) [pkg] index
   where
     pkgid = packageId pkg
     insertNoDup []                = [pkg]
     insertNoDup pkgs@(pkg':pkgs') = case compare pkgid (packageId pkg') of
-      LT -> pkg  : pkgs
-      EQ -> pkg  : pkgs'
+      LT -> pkg : pkgs
+      EQ -> pkg : pkgs'
       GT -> pkg' : insertNoDup pkgs'
 
 -- | Internal delete helper.
 --
-delete :: Package pkg => PackageName -> (pkg -> Bool) -> PackageIndex pkg -> PackageIndex pkg
-delete name p (PackageIndex index) = mkPackageIndex $
-  Map.update filterBucket name index
+delete
+  :: Package pkg
+  => PackageName
+  -> (pkg -> Bool)
+  -> PackageIndex pkg
+  -> PackageIndex pkg
+delete name p (PackageIndex index) = mkPackageIndex
+  $ Map.update filterBucket name index
   where
-    filterBucket = deleteEmptyBucket
-                 . filter (not . p)
+    filterBucket = deleteEmptyBucket . filter (not . p)
     deleteEmptyBucket []        = Nothing
     deleteEmptyBucket remaining = Just remaining
 
 -- | Removes a single package from the index.
 --
-deletePackageId :: Package pkg => PackageIdentifier -> PackageIndex pkg -> PackageIndex pkg
+deletePackageId
+  :: Package pkg => PackageIdentifier -> PackageIndex pkg -> PackageIndex pkg
 deletePackageId pkgid =
   delete (packageName pkgid) (\pkg -> packageId pkg == pkgid)
 
 -- | Removes all packages with this (case-sensitive) name from the index.
 --
-deletePackageName :: Package pkg => PackageName -> PackageIndex pkg -> PackageIndex pkg
-deletePackageName name =
-  delete name (\pkg -> packageName pkg == name)
+deletePackageName
+  :: Package pkg => PackageName -> PackageIndex pkg -> PackageIndex pkg
+deletePackageName name = delete name (\pkg -> packageName pkg == name)
 
 -- | Removes all packages satisfying this dependency from the index.
 --
-deleteDependency :: Package pkg => Dependency -> PackageIndex pkg -> PackageIndex pkg
+deleteDependency
+  :: Package pkg => Dependency -> PackageIndex pkg -> PackageIndex pkg
 deleteDependency (Dependency name verstionRange) =
   delete name (\pkg -> packageVersion pkg `withinRange` verstionRange)
 
@@ -251,20 +257,21 @@ elemByPackageName index = not . null . lookupPackageName index
 -- Since multiple package DBs mask each other case-sensitively by package name,
 -- then we get back at most one package.
 --
-lookupPackageId :: Package pkg => PackageIndex pkg -> PackageIdentifier -> Maybe pkg
+lookupPackageId
+  :: Package pkg => PackageIndex pkg -> PackageIdentifier -> Maybe pkg
 lookupPackageId index pkgid =
-  case [ pkg | pkg <- lookup index (packageName pkgid)
-             , packageId pkg == pkgid ] of
-    []    -> Nothing
-    [pkg] -> Just pkg
-    _     -> internalError "lookupPackageIdentifier"
+  case
+      [ pkg | pkg <- lookup index (packageName pkgid), packageId pkg == pkgid ]
+    of
+      []    -> Nothing
+      [pkg] -> Just pkg
+      _     -> internalError "lookupPackageIdentifier"
 
 -- | Does a case-sensitive search by package name.
 --
 lookupPackageName :: Package pkg => PackageIndex pkg -> PackageName -> [pkg]
 lookupPackageName index name =
-  [ pkg | pkg <- lookup index name
-        , packageName pkg == name ]
+  [ pkg | pkg <- lookup index name, packageName pkg == name ]
 
 -- | Does a case-sensitive search by package name and a range of versions.
 --
@@ -273,9 +280,11 @@ lookupPackageName index name =
 --
 lookupDependency :: Package pkg => PackageIndex pkg -> Dependency -> [pkg]
 lookupDependency index (Dependency name versionRange) =
-  [ pkg | pkg <- lookup index name
-        , packageName pkg == name
-        , packageVersion pkg `withinRange` versionRange ]
+  [ pkg
+  | pkg <- lookup index name
+  , packageName pkg == name
+  , packageVersion pkg `withinRange` versionRange
+  ]
 
 --
 -- * Case insensitive name lookups
@@ -293,12 +302,12 @@ lookupDependency index (Dependency name versionRange) =
 -- packages. The list of ambiguous results is split by exact package name. So
 -- it is a non-empty list of non-empty lists.
 --
-searchByName :: PackageIndex pkg
-             -> String -> [(PackageName, [pkg])]
+searchByName :: PackageIndex pkg -> String -> [(PackageName, [pkg])]
 searchByName (PackageIndex m) name =
-    [ pkgs
-    | pkgs@(PackageName name',_) <- Map.toList m
-    , lowercase name' == lname ]
+  [ pkgs
+  | pkgs@(PackageName name', _) <- Map.toList m
+  , lowercase name' == lname
+  ]
   where
     lname = lowercase name
 
@@ -308,11 +317,11 @@ data SearchResult a = None | Unambiguous a | Ambiguous [a]
 --
 -- That is, all packages that contain the given string in their name.
 --
-searchByNameSubstring :: PackageIndex pkg
-                      -> String -> [(PackageName, [pkg])]
+searchByNameSubstring :: PackageIndex pkg -> String -> [(PackageName, [pkg])]
 searchByNameSubstring (PackageIndex m) searchterm =
-    [ pkgs
-    | pkgs@(PackageName name, _) <- Map.toList m
-    , lsearchterm `isInfixOf` lowercase name ]
+  [ pkgs
+  | pkgs@(PackageName name, _) <- Map.toList m
+  , lsearchterm `isInfixOf` lowercase name
+  ]
   where
     lsearchterm = lowercase searchterm

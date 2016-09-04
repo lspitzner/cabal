@@ -35,8 +35,7 @@ showPackageConstraint (PackageConstraintVersion pn vr) =
   display pn ++ " " ++ display (simplifyVersionRange vr)
 showPackageConstraint (PackageConstraintInstalled pn) =
   display pn ++ " installed"
-showPackageConstraint (PackageConstraintSource pn) =
-  display pn ++ " source"
+showPackageConstraint (PackageConstraintSource pn) = display pn ++ " source"
 showPackageConstraint (PackageConstraintFlags pn fs) =
   "flags " ++ display pn ++ " " ++ unwords (map (uncurry showFlag) fs)
   where

@@ -32,16 +32,13 @@ import qualified Data.ByteString.Builder as BB
 --
 -- This is for the benefit of debugging and external tools like editors.
 --
-writePlanExternalRepresentation :: DistDirLayout
-                                -> ElaboratedInstallPlan
-                                -> ElaboratedSharedConfig
-                                -> IO ()
-writePlanExternalRepresentation distDirLayout elaboratedInstallPlan
-                                elaboratedSharedConfig =
-    writeFileAtomic (distProjectCacheFile distDirLayout "plan.json") $
-        BB.toLazyByteString
-      . J.encodeToBuilder
-      $ encodePlanAsJson elaboratedInstallPlan elaboratedSharedConfig
+writePlanExternalRepresentation
+  :: DistDirLayout -> ElaboratedInstallPlan -> ElaboratedSharedConfig -> IO ()
+writePlanExternalRepresentation distDirLayout elaboratedInstallPlan elaboratedSharedConfig
+  = writeFileAtomic (distProjectCacheFile distDirLayout "plan.json")
+  $ BB.toLazyByteString
+  . J.encodeToBuilder
+  $ encodePlanAsJson elaboratedInstallPlan elaboratedSharedConfig
 
 -- | Renders a subset of the elaborated install plan in a semi-stable JSON
 -- format.
@@ -50,10 +47,11 @@ encodePlanAsJson :: ElaboratedInstallPlan -> ElaboratedSharedConfig -> J.Value
 encodePlanAsJson elaboratedInstallPlan _elaboratedSharedConfig =
     --TODO: [nice to have] include all of the sharedPackageConfig and all of
     --      the parts of the elaboratedInstallPlan
-    J.object [ "cabal-version"     J..= jdisplay Our.version
-             , "cabal-lib-version" J..= jdisplay cabalVersion
-             , "install-plan"      J..= jsonIPlan
-             ]
+                                                                 J.object
+  [ "cabal-version" J..= jdisplay Our.version
+  , "cabal-lib-version" J..= jdisplay cabalVersion
+  , "install-plan" J..= jsonIPlan
+  ]
   where
     jsonIPlan = map toJ (InstallPlan.toList elaboratedInstallPlan)
 
@@ -63,37 +61,42 @@ encodePlanAsJson elaboratedInstallPlan _elaboratedSharedConfig =
       -- such as their flag settings or non-lib components.
       --
       -- TODO: how to find out whether package is "local"?
-      J.object
-        [ "type"       J..= J.String "pre-existing"
-        , "id"         J..= jdisplay (installedUnitId ipi)
-        , "components" J..= J.object
-          [ "lib" J..= J.object [ "depends" J..= map jdisplay (installedDepends ipi) ] ]
-        ]
+                                        J.object
+      [ "type" J..= J.String "pre-existing"
+      , "id" J..= jdisplay (installedUnitId ipi)
+      , "components"
+        J..= J.object
+               [ "lib"
+                 J..= J.object
+                        ["depends" J..= map jdisplay (installedDepends ipi)]
+               ]
+      ]
 
     -- ecp :: ElaboratedConfiguredPackage
-    toJ (InstallPlan.Configured ecp) =
-      J.object
-        [ "type"       J..= J.String "configured"
-        , "id"         J..= (jdisplay . installedUnitId) ecp
-        , "components" J..= components
-        , "flags"      J..= J.object [ fn J..= v
-                                     | (PD.FlagName fn,v) <- pkgFlagAssignment ecp ]
-        ]
+    toJ (InstallPlan.Configured  ecp) = J.object
+      [ "type" J..= J.String "configured"
+      , "id" J..= (jdisplay . installedUnitId) ecp
+      , "components" J..= components
+      , "flags"
+        J..= J.object
+               [ fn J..= v | (PD.FlagName fn, v) <- pkgFlagAssignment ecp ]
+      ]
       where
         components = J.object
-          [ comp2str c J..= J.object
-            [ "depends" J..= map (jdisplay . installedUnitId) v ]
-          | (c,v) <- ComponentDeps.toList (pkgDependencies ecp) ]
+          [ comp2str c
+            J..= J.object ["depends" J..= map (jdisplay . installedUnitId) v]
+          | (c, v) <- ComponentDeps.toList (pkgDependencies ecp)
+          ]
 
     -- TODO: maybe move this helper to "ComponentDeps" module?
     --       Or maybe define a 'Text' instance?
     comp2str c = case c of
-        ComponentDeps.ComponentLib     -> "lib"
-        ComponentDeps.ComponentSubLib s -> "lib:"   <> s
-        ComponentDeps.ComponentExe s   -> "exe:"   <> s
-        ComponentDeps.ComponentTest s  -> "test:"  <> s
-        ComponentDeps.ComponentBench s -> "bench:" <> s
-        ComponentDeps.ComponentSetup   -> "setup"
+      ComponentDeps.ComponentLib      -> "lib"
+      ComponentDeps.ComponentSubLib s -> "lib:" <> s
+      ComponentDeps.ComponentExe    s -> "exe:" <> s
+      ComponentDeps.ComponentTest   s -> "test:" <> s
+      ComponentDeps.ComponentBench  s -> "bench:" <> s
+      ComponentDeps.ComponentSetup    -> "setup"
 
     jdisplay :: Text a => a -> J.Value
     jdisplay = J.String . display

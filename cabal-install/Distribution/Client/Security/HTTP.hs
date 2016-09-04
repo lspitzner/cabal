@@ -60,52 +60,64 @@ import qualified Hackage.Security.Util.Lens as Lens
 --   insist on a minimum download rate (potential security attack).
 --   Fixing it however would require changing the 'HttpTransport'.
 transportAdapter :: Verbosity -> IO HttpTransport -> HttpLib
-transportAdapter verbosity getTransport = HttpLib{
-      httpGet      = \headers uri callback -> do
-                        transport <- getTransport
-                        get verbosity transport headers uri callback
-    , httpGetRange = \headers uri range callback -> do
-                        transport <- getTransport
-                        getRange verbosity transport headers uri range callback
-    }
+transportAdapter verbosity getTransport = HttpLib
+  { httpGet      = \headers uri callback -> do
+    transport <- getTransport
+    get verbosity transport headers uri callback
+  , httpGetRange = \headers uri range callback -> do
+    transport <- getTransport
+    getRange verbosity transport headers uri range callback
+  }
 
-get :: Throws SomeRemoteError
-    => Verbosity
-    -> HttpTransport
-    -> [HttpRequestHeader] -> URI
-    -> ([HttpResponseHeader] -> BodyReader -> IO a)
-    -> IO a
+get
+  :: Throws SomeRemoteError
+  => Verbosity
+  -> HttpTransport
+  -> [HttpRequestHeader]
+  -> URI
+  -> ([HttpResponseHeader] -> BodyReader -> IO a)
+  -> IO a
 get verbosity transport reqHeaders uri callback = wrapCustomEx $ do
-  get' verbosity transport reqHeaders uri Nothing $ \code respHeaders br ->
-    case code of
-      200 -> callback respHeaders br
-      _   -> throwChecked $ UnexpectedResponse uri code
+  get' verbosity transport reqHeaders uri Nothing
+    $ \code respHeaders br -> case code of
+        200 -> callback respHeaders br
+        _   -> throwChecked $ UnexpectedResponse uri code
 
-getRange :: Throws SomeRemoteError
-         => Verbosity
-         -> HttpTransport
-         -> [HttpRequestHeader] -> URI -> (Int, Int)
-         -> (HttpStatus -> [HttpResponseHeader] -> BodyReader -> IO a)
-         -> IO a
+getRange
+  :: Throws SomeRemoteError
+  => Verbosity
+  -> HttpTransport
+  -> [HttpRequestHeader]
+  -> URI
+  -> (Int, Int)
+  -> (  HttpStatus
+     -> [HttpResponseHeader]
+     -> BodyReader
+     -> IO a
+     )
+  -> IO a
 getRange verbosity transport reqHeaders uri range callback = wrapCustomEx $ do
-  get' verbosity transport reqHeaders uri (Just range) $ \code respHeaders br ->
-    case code of
-       200 -> callback HttpStatus200OK             respHeaders br
-       206 -> callback HttpStatus206PartialContent respHeaders br
-       _   -> throwChecked $ UnexpectedResponse uri code
+  get' verbosity transport reqHeaders uri (Just range)
+    $ \code respHeaders br -> case code of
+        200 -> callback HttpStatus200OK respHeaders br
+        206 -> callback HttpStatus206PartialContent respHeaders br
+        _   -> throwChecked $ UnexpectedResponse uri code
 
 -- | Internal generalization of 'get' and 'getRange'
-get' :: Verbosity
-     -> HttpTransport
-     -> [HttpRequestHeader] -> URI -> Maybe (Int, Int)
-     -> (HttpCode -> [HttpResponseHeader] -> BodyReader -> IO a)
-     -> IO a
+get'
+  :: Verbosity
+  -> HttpTransport
+  -> [HttpRequestHeader]
+  -> URI
+  -> Maybe (Int, Int)
+  -> (HttpCode -> [HttpResponseHeader] -> BodyReader -> IO a)
+  -> IO a
 get' verbosity transport reqHeaders uri mRange callback = do
-    tempDir <- getTemporaryDirectory
-    withTempFileName tempDir "transportAdapterGet" $ \temp -> do
-      (code, _etag) <- getHttp transport verbosity uri Nothing temp reqHeaders'
-      br <- bodyReaderFromBS =<< BS.L.readFile temp
-      callback code [HttpResponseAcceptRangesBytes] br
+  tempDir <- getTemporaryDirectory
+  withTempFileName tempDir "transportAdapterGet" $ \temp -> do
+    (code, _etag) <- getHttp transport verbosity uri Nothing temp reqHeaders'
+    br            <- bodyReaderFromBS =<< BS.L.readFile temp
+    callback code [HttpResponseAcceptRangesBytes] br
   where
     reqHeaders' = mkReqHeaders reqHeaders mRange
 
@@ -121,14 +133,11 @@ mkRangeHeader from to = HTTP.Header HTTP.HdrRange rangeHeader
     rangeHeader = "bytes=" ++ show from ++ "-" ++ show (to - 1)
 
 mkReqHeaders :: [HttpRequestHeader] -> Maybe (Int, Int) -> [HTTP.Header]
-mkReqHeaders reqHeaders mRange = concat [
-      tr [] reqHeaders
-    , [mkRangeHeader fr to | Just (fr, to) <- [mRange]]
-    ]
+mkReqHeaders reqHeaders mRange = concat
+  [tr [] reqHeaders, [ mkRangeHeader fr to | Just (fr, to) <- [mRange] ]]
   where
     tr :: [(HTTP.HeaderName, [String])] -> [HttpRequestHeader] -> [HTTP.Header]
-    tr acc [] =
-      concatMap finalize acc
+    tr acc [] = concatMap finalize acc
     tr acc (HttpRequestMaxAge0:os) =
       tr (insert HTTP.HdrCacheControl ["max-age=0"] acc) os
     tr acc (HttpRequestNoTransform:os) =
@@ -142,7 +151,7 @@ mkReqHeaders reqHeaders mRange = concat [
     finalize (name, strs) = [HTTP.Header name (intercalate ", " (reverse strs))]
 
     insert :: Eq a => a -> [b] -> [(a, [b])] -> [(a, [b])]
-    insert x y = Lens.modify (Lens.lookupM x) (++ y)
+    insert x y = Lens.modify (Lens.lookupM x) (++y)
 
 {-------------------------------------------------------------------------------
   Custom exceptions
@@ -163,12 +172,12 @@ instance Show UnexpectedResponse where show = pretty
 instance Exception UnexpectedResponse
 #endif
 
-wrapCustomEx :: ( ( Throws UnexpectedResponse
-                  , Throws IOException
-                  ) => IO a)
-             -> (Throws SomeRemoteError => IO a)
-wrapCustomEx act = handleChecked (\(ex :: UnexpectedResponse) -> go ex)
-                 $ handleChecked (\(ex :: IOException)        -> go ex)
-                 $ act
+wrapCustomEx
+  :: ((Throws UnexpectedResponse, Throws IOException) => IO a)
+  -> (Throws SomeRemoteError => IO a)
+wrapCustomEx act =
+  handleChecked (\(ex :: UnexpectedResponse) -> go ex)
+    $ handleChecked (\(ex :: IOException) -> go ex)
+    $ act
   where
     go ex = throwChecked (SomeRemoteError ex)

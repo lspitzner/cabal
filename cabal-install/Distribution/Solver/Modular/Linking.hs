@@ -59,7 +59,7 @@ type Linker       = Reader RelatedGoals
 -- find a choice, we look into the map in order to find out what link options we
 -- have to add.
 addLinking :: Tree a -> Tree a
-addLinking = (`runReader` M.empty) .  cata go
+addLinking = (`runReader`M.empty) . cata go
   where
     go :: TreeF a (Linker (Tree a)) -> Linker (Tree a)
 
@@ -69,26 +69,26 @@ addLinking = (`runReader` M.empty) .  cata go
       cs' <- T.sequence $ P.mapWithKey (goP qpn) cs
       let newCs = concatMap (linkChoices env qpn) (P.toList cs')
       return $ PChoice qpn gr (cs' `P.union` P.fromList newCs)
-    go _otherwise =
-      innM _otherwise
+    go _otherwise           = innM _otherwise
 
     -- Recurse underneath package choices. Here we just need to make sure
     -- that we record the package choice so that it is available below
     goP :: QPN -> POption -> Linker (Tree a) -> Linker (Tree a)
     goP (Q pp pn) (POption i Nothing) = local (M.insertWith (++) (pn, i) [pp])
-    goP _ _ = alreadyLinked
+    goP _         _                   = alreadyLinked
 
 linkChoices :: forall a . RelatedGoals -> QPN -> (POption, a) -> [(POption, a)]
-linkChoices related (Q _pp pn) (POption i Nothing, subtree) =
-    map aux (M.findWithDefault [] (pn, i) related)
+linkChoices related (Q _pp pn) (POption i Nothing, subtree) = map
+  aux
+  (M.findWithDefault [] (pn, i) related)
   where
     aux :: PackagePath -> (POption, a)
     aux pp = (POption i (Just pp), subtree)
-linkChoices _ _ (POption _ (Just _), _) =
-    alreadyLinked
+linkChoices _ _ (POption _ (Just _), _) = alreadyLinked
 
 alreadyLinked :: a
-alreadyLinked = error "addLinking called on tree that already contains linked nodes"
+alreadyLinked =
+  error "addLinking called on tree that already contains linked nodes"
 
 {-------------------------------------------------------------------------------
   Validation
@@ -131,20 +131,20 @@ type Validate = Reader ValidateState
 -- * Equal flag assignments
 -- * Equal stanza assignments
 validateLinking :: Index -> Tree a -> Tree a
-validateLinking index = (`runReader` initVS) . cata go
+validateLinking index = (`runReader`initVS) . cata go
   where
     go :: TreeF a (Validate (Tree a)) -> Validate (Tree a)
 
     go (PChoiceF qpn gr cs) =
-      PChoice qpn gr     <$> T.sequence (P.mapWithKey (goP qpn) cs)
+      PChoice qpn gr <$> T.sequence (P.mapWithKey (goP qpn) cs)
     go (FChoiceF qfn gr t m cs) =
       FChoice qfn gr t m <$> T.sequence (P.mapWithKey (goF qfn) cs)
     go (SChoiceF qsn gr t cs) =
-      SChoice qsn gr t   <$> T.sequence (P.mapWithKey (goS qsn) cs)
+      SChoice qsn gr t <$> T.sequence (P.mapWithKey (goS qsn) cs)
 
     -- For the other nodes we just recurse
-    go (GoalChoiceF         cs)       = GoalChoice          <$> T.sequence cs
-    go (DoneF revDepMap)              = return $ Done revDepMap
+    go (GoalChoiceF cs              ) = GoalChoice <$> T.sequence cs
+    go (DoneF       revDepMap       ) = return $ Done revDepMap
     go (FailF conflictSet failReason) = return $ Fail conflictSet failReason
 
     -- Package choices
@@ -174,11 +174,11 @@ validateLinking index = (`runReader` initVS) . cata go
         Right vs'       -> local (const vs') r
 
     initVS :: ValidateState
-    initVS = VS {
-        vsIndex   = index
-      , vsLinks   = M.empty
-      , vsFlags   = M.empty
-      , vsStanzas = M.empty
+    initVS = VS
+      { vsIndex          = index
+      , vsLinks          = M.empty
+      , vsFlags          = M.empty
+      , vsStanzas        = M.empty
       , vsQualifyOptions = defaultQualifyOptions index
       }
 
@@ -205,73 +205,74 @@ lift' = UpdateState . lift
 conflict :: Conflict -> UpdateState a
 conflict = lift' . Left
 
-execUpdateState :: UpdateState () -> ValidateState -> Either Conflict ValidateState
+execUpdateState
+  :: UpdateState () -> ValidateState -> Either Conflict ValidateState
 execUpdateState = execStateT . unUpdateState
 
 pickPOption :: QPN -> POption -> FlaggedDeps Component QPN -> UpdateState ()
-pickPOption qpn (POption i Nothing)    _deps = pickConcrete qpn i
-pickPOption qpn (POption i (Just pp'))  deps = pickLink     qpn i pp' deps
+pickPOption qpn (POption i Nothing   ) _deps = pickConcrete qpn i
+pickPOption qpn (POption i (Just pp')) deps  = pickLink qpn i pp' deps
 
 pickConcrete :: QPN -> I -> UpdateState ()
 pickConcrete qpn@(Q pp _) i = do
-    vs <- get
-    case M.lookup qpn (vsLinks vs) of
-      -- Package is not yet in a LinkGroup. Create a new singleton link group.
-      Nothing -> do
-        let lg = lgSingleton qpn (Just $ PI pp i)
-        updateLinkGroup lg
+  vs <- get
+  case M.lookup qpn (vsLinks vs) of
+    -- Package is not yet in a LinkGroup. Create a new singleton link group.
+    Nothing -> do
+      let lg = lgSingleton qpn (Just $ PI pp i)
+      updateLinkGroup lg
 
-      -- Package is already in a link group. Since we are picking a concrete
-      -- instance here, it must by definition be the canonical package.
-      Just lg ->
-        makeCanonical lg qpn i
+    -- Package is already in a link group. Since we are picking a concrete
+    -- instance here, it must by definition be the canonical package.
+    Just lg -> makeCanonical lg qpn i
 
-pickLink :: QPN -> I -> PackagePath -> FlaggedDeps Component QPN -> UpdateState ()
+pickLink
+  :: QPN -> I -> PackagePath -> FlaggedDeps Component QPN -> UpdateState ()
 pickLink qpn@(Q _pp pn) i pp' deps = do
-    vs <- get
+  vs <- get
 
-    -- The package might already be in a link group
-    -- (because one of its reverse dependencies is)
-    let lgSource = case M.lookup qpn (vsLinks vs) of
-                     Nothing -> lgSingleton qpn Nothing
-                     Just lg -> lg
+  -- The package might already be in a link group
+  -- (because one of its reverse dependencies is)
+  let lgSource = case M.lookup qpn (vsLinks vs) of
+        Nothing -> lgSingleton qpn Nothing
+        Just lg -> lg
 
-    -- Find the link group for the package we are linking to
-    --
-    -- Since the builder never links to a package without having first picked a
-    -- concrete instance for that package, and since we create singleton link
-    -- groups for concrete instances, this link group must exist (and must
-    -- in fact already have a canonical member).
-    let target   = Q pp' pn
-        lgTarget = vsLinks vs ! target
+  -- Find the link group for the package we are linking to
+  --
+  -- Since the builder never links to a package without having first picked a
+  -- concrete instance for that package, and since we create singleton link
+  -- groups for concrete instances, this link group must exist (and must
+  -- in fact already have a canonical member).
+  let target   = Q pp' pn
+      lgTarget = vsLinks vs ! target
 
-    -- Verify here that the member we add is in fact for the same package and
-    -- matches the version of the canonical instance. However, violations of
-    -- these checks would indicate a bug in the linker, not a true conflict.
-    let sanityCheck :: Maybe (PI PackagePath) -> Bool
-        sanityCheck Nothing              = False
-        sanityCheck (Just (PI _ canonI)) = pn == lgPackage lgTarget && i == canonI
-    assert (sanityCheck (lgCanon lgTarget)) $ return ()
+  -- Verify here that the member we add is in fact for the same package and
+  -- matches the version of the canonical instance. However, violations of
+  -- these checks would indicate a bug in the linker, not a true conflict.
+  let sanityCheck :: Maybe (PI PackagePath) -> Bool
+      sanityCheck Nothing              = False
+      sanityCheck (Just (PI _ canonI)) = pn == lgPackage lgTarget && i == canonI
+  assert (sanityCheck (lgCanon lgTarget)) $ return ()
 
-    -- Merge the two link groups (updateLinkGroup will propagate the change)
-    lgTarget' <- lift' $ lgMerge [] lgSource lgTarget
-    updateLinkGroup lgTarget'
+  -- Merge the two link groups (updateLinkGroup will propagate the change)
+  lgTarget' <- lift' $ lgMerge [] lgSource lgTarget
+  updateLinkGroup lgTarget'
 
-    -- Make sure all dependencies are linked as well
-    linkDeps target [P qpn] deps
+  -- Make sure all dependencies are linked as well
+  linkDeps target [P qpn] deps
 
 makeCanonical :: LinkGroup -> QPN -> I -> UpdateState ()
-makeCanonical lg qpn@(Q pp _) i =
-    case lgCanon lg of
+makeCanonical lg qpn@(Q pp _) i = case lgCanon lg of
       -- There is already a canonical member. Fail.
-      Just _ ->
-        conflict ( CS.insert (P qpn) (lgConflictSet lg)
-                 ,    "cannot make " ++ showQPN qpn
-                   ++ " canonical member of " ++ showLinkGroup lg
-                 )
-      Nothing -> do
-        let lg' = lg { lgCanon = Just (PI pp i) }
-        updateLinkGroup lg'
+  Just _ ->
+    conflict
+      (CS.insert (P qpn) (lgConflictSet lg), "cannot make "
+        ++ showQPN qpn
+        ++ " canonical member of "
+        ++ showLinkGroup lg)
+  Nothing -> do
+    let lg' = lg { lgCanon = Just (PI pp i) }
+    updateLinkGroup lg'
 
 -- | Link the dependencies of linked parents.
 --
@@ -289,55 +290,65 @@ linkDeps target = \blame deps -> do
     -- package after doing some flag assignment. It is therefore important that
     -- flag assignments cannot influence _how_ dependencies are qualified;
     -- fortunately this is a documented property of 'qualifyDeps'.
-    rdeps <- requalify deps
-    go blame deps rdeps
+  rdeps <- requalify deps
+  go blame deps rdeps
   where
-    go :: [Var QPN] -> FlaggedDeps Component QPN -> FlaggedDeps Component QPN -> UpdateState ()
+    go
+      :: [Var QPN]
+      -> FlaggedDeps Component QPN
+      -> FlaggedDeps Component QPN
+      -> UpdateState ()
     go = zipWithM_ . go1
 
-    go1 :: [Var QPN] -> FlaggedDep Component QPN -> FlaggedDep Component QPN -> UpdateState ()
+    go1
+      :: [Var QPN]
+      -> FlaggedDep Component QPN
+      -> FlaggedDep Component QPN
+      -> UpdateState ()
     go1 blame dep rdep = case (dep, rdep) of
       (Simple (Dep qpn _) _, ~(Simple (Dep qpn' _) _)) -> do
         vs <- get
-        let lg   = M.findWithDefault (lgSingleton qpn  Nothing) qpn  $ vsLinks vs
-            lg'  = M.findWithDefault (lgSingleton qpn' Nothing) qpn' $ vsLinks vs
+        let
+          lg  = M.findWithDefault (lgSingleton qpn Nothing) qpn $ vsLinks vs
+          lg' = M.findWithDefault (lgSingleton qpn' Nothing) qpn' $ vsLinks vs
         lg'' <- lift' $ lgMerge blame lg lg'
         updateLinkGroup lg''
-      (Flagged fn _ t f, ~(Flagged _ _ t' f')) -> do
+      (Flagged fn _ t f    , ~(Flagged _ _ t' f')    ) -> do
         vs <- get
         case M.lookup fn (vsFlags vs) of
           Nothing    -> return () -- flag assignment not yet known
-          Just True  -> go (F fn:blame) t t'
-          Just False -> go (F fn:blame) f f'
-      (Stanza sn t, ~(Stanza _ t')) -> do
+          Just True  -> go (F fn : blame) t t'
+          Just False -> go (F fn : blame) f f'
+      (Stanza sn        t  , ~(Stanza _ t')          ) -> do
         vs <- get
         case M.lookup sn (vsStanzas vs) of
           Nothing    -> return () -- stanza assignment not yet known
-          Just True  -> go (S sn:blame) t t'
+          Just True  -> go (S sn : blame) t t'
           Just False -> return () -- stanza not enabled; no new deps
     -- For extensions and language dependencies, there is nothing to do.
     -- No choice is involved, just checking, so there is nothing to link.
     -- The same goes for for pkg-config constraints.
-      (Simple (Ext  _)   _, _) -> return ()
-      (Simple (Lang _)   _, _) -> return ()
-      (Simple (Pkg  _ _) _, _) -> return ()
+      (Simple (Ext  _ ) _  , _                       ) -> return ()
+      (Simple (Lang _ ) _  , _                       ) -> return ()
+      (Simple (Pkg _ _) _  , _                       ) -> return ()
 
-    requalify :: FlaggedDeps Component QPN -> UpdateState (FlaggedDeps Component QPN)
+    requalify
+      :: FlaggedDeps Component QPN -> UpdateState (FlaggedDeps Component QPN)
     requalify deps = do
       vs <- get
       return $ qualifyDeps (vsQualifyOptions vs) target (unqualifyDeps deps)
 
 pickFlag :: QFN -> Bool -> UpdateState ()
 pickFlag qfn b = do
-    modify $ \vs -> vs { vsFlags = M.insert qfn b (vsFlags vs) }
-    verifyFlag qfn
-    linkNewDeps (F qfn) b
+  modify $ \vs -> vs { vsFlags = M.insert qfn b (vsFlags vs) }
+  verifyFlag qfn
+  linkNewDeps (F qfn) b
 
 pickStanza :: QSN -> Bool -> UpdateState ()
 pickStanza qsn b = do
-    modify $ \vs -> vs { vsStanzas = M.insert qsn b (vsStanzas vs) }
-    verifyStanza qsn
-    linkNewDeps (S qsn) b
+  modify $ \vs -> vs { vsStanzas = M.insert qsn b (vsStanzas vs) }
+  verifyStanza qsn
+  linkNewDeps (S qsn) b
 
 -- | Link dependencies that we discover after making a flag choice.
 --
@@ -348,40 +359,49 @@ pickStanza qsn b = do
 -- linked.
 linkNewDeps :: Var QPN -> Bool -> UpdateState ()
 linkNewDeps var b = do
-    vs <- get
-    let (qpn@(Q pp pn), Just i) = varPI var
-        PInfo deps _ _          = vsIndex vs ! pn ! i
-        qdeps                   = qualifyDeps (vsQualifyOptions vs) qpn deps
-        lg                      = vsLinks vs ! qpn
-        (parents, newDeps)      = findNewDeps vs qdeps
-        linkedTo                = S.delete pp (lgMembers lg)
-    forM_ (S.toList linkedTo) $ \pp' -> linkDeps (Q pp' pn) (P qpn : parents) newDeps
+  vs <- get
+  let (     qpn@(Q pp pn), Just i) = varPI var
+      PInfo deps         _       _ = vsIndex vs ! pn ! i
+      qdeps                        = qualifyDeps (vsQualifyOptions vs) qpn deps
+      lg                           = vsLinks vs ! qpn
+      (parents, newDeps)           = findNewDeps vs qdeps
+      linkedTo                     = S.delete pp (lgMembers lg)
+  forM_ (S.toList linkedTo)
+    $ \pp' -> linkDeps (Q pp' pn) (P qpn : parents) newDeps
   where
-    findNewDeps :: ValidateState -> FlaggedDeps comp QPN -> ([Var QPN], FlaggedDeps Component QPN)
+    findNewDeps
+      :: ValidateState
+      -> FlaggedDeps comp QPN
+      -> ([Var QPN], FlaggedDeps Component QPN)
     findNewDeps vs = concatMapUnzip (findNewDeps' vs)
 
-    findNewDeps' :: ValidateState -> FlaggedDep comp QPN -> ([Var QPN], FlaggedDeps Component QPN)
-    findNewDeps' _  (Simple _ _)        = ([], [])
+    findNewDeps'
+      :: ValidateState
+      -> FlaggedDep comp QPN
+      -> ([Var QPN], FlaggedDeps Component QPN)
+    findNewDeps' _ (Simple _ _) = ([], [])
     findNewDeps' vs (Flagged qfn _ t f) =
       case (F qfn == var, M.lookup qfn (vsFlags vs)) of
-        (True, _)    -> ([F qfn], if b then t else f)
-        (_, Nothing) -> ([], []) -- not yet known
-        (_, Just b') -> let (parents, deps) = findNewDeps vs (if b' then t else f)
-                        in (F qfn:parents, deps)
+        (True, _      ) -> ([F qfn], if b then t else f)
+        (_   , Nothing) -> ([], []) -- not yet known
+        (_, Just b') ->
+          let (parents, deps) = findNewDeps vs (if b' then t else f)
+          in  (F qfn : parents, deps)
     findNewDeps' vs (Stanza qsn t) =
       case (S qsn == var, M.lookup qsn (vsStanzas vs)) of
-        (True, _)    -> ([S qsn], if b then t else [])
-        (_, Nothing) -> ([], []) -- not yet known
-        (_, Just b') -> let (parents, deps) = findNewDeps vs (if b' then t else [])
-                        in (S qsn:parents, deps)
+        (True, _      ) -> ([S qsn], if b then t else [])
+        (_   , Nothing) -> ([], []) -- not yet known
+        (_, Just b') ->
+          let (parents, deps) = findNewDeps vs (if b' then t else [])
+          in  (S qsn : parents, deps)
 
 updateLinkGroup :: LinkGroup -> UpdateState ()
 updateLinkGroup lg = do
-    verifyLinkGroup lg
-    modify $ \vs -> vs {
-        vsLinks =           M.fromList (map aux (S.toList (lgMembers lg)))
-                  `M.union` vsLinks vs
-      }
+  verifyLinkGroup lg
+  modify $ \vs -> vs
+    { vsLinks = M.fromList (map aux (S.toList (lgMembers lg)))
+      `M.union` vsLinks vs
+    }
   where
     aux pp = (Q pp (lgPackage lg), lg)
 
@@ -390,38 +410,36 @@ updateLinkGroup lg = do
 -------------------------------------------------------------------------------}
 
 verifyLinkGroup :: LinkGroup -> UpdateState ()
-verifyLinkGroup lg =
-    case lgInstance lg of
+verifyLinkGroup lg = case lgInstance lg of
       -- No instance picked yet. Nothing to verify
-      Nothing ->
-        return ()
+  Nothing -> return ()
 
-      -- We picked an instance. Verify flags and stanzas
-      -- TODO: The enumeration of OptionalStanza names is very brittle;
-      -- if a constructor is added to the datatype we won't notice it here
-      Just i -> do
-        vs <- get
-        let PInfo _deps finfo _ = vsIndex vs ! lgPackage lg ! i
-            flags   = M.keys finfo
-            stanzas = [TestStanzas, BenchStanzas]
-        forM_ flags $ \fn -> do
-          let flag = FN (PI (lgPackage lg) i) fn
-          verifyFlag' flag lg
-        forM_ stanzas $ \sn -> do
-          let stanza = SN (PI (lgPackage lg) i) sn
-          verifyStanza' stanza lg
+  -- We picked an instance. Verify flags and stanzas
+  -- TODO: The enumeration of OptionalStanza names is very brittle;
+  -- if a constructor is added to the datatype we won't notice it here
+  Just i  -> do
+    vs <- get
+    let PInfo _deps finfo _ = vsIndex vs ! lgPackage lg ! i
+        flags               = M.keys finfo
+        stanzas             = [TestStanzas, BenchStanzas]
+    forM_ flags $ \fn -> do
+      let flag = FN (PI (lgPackage lg) i) fn
+      verifyFlag' flag lg
+    forM_ stanzas $ \sn -> do
+      let stanza = SN (PI (lgPackage lg) i) sn
+      verifyStanza' stanza lg
 
 verifyFlag :: QFN -> UpdateState ()
 verifyFlag (FN (PI qpn@(Q _pp pn) i) fn) = do
-    vs <- get
-    -- We can only pick a flag after picking an instance; link group must exist
-    verifyFlag' (FN (PI pn i) fn) (vsLinks vs ! qpn)
+  vs <- get
+  -- We can only pick a flag after picking an instance; link group must exist
+  verifyFlag' (FN (PI pn i) fn) (vsLinks vs ! qpn)
 
 verifyStanza :: QSN -> UpdateState ()
 verifyStanza (SN (PI qpn@(Q _pp pn) i) sn) = do
-    vs <- get
-    -- We can only pick a stanza after picking an instance; link group must exist
-    verifyStanza' (SN (PI pn i) sn) (vsLinks vs ! qpn)
+  vs <- get
+  -- We can only pick a stanza after picking an instance; link group must exist
+  verifyStanza' (SN (PI pn i) sn) (vsLinks vs ! qpn)
 
 -- | Verify that all packages in the link group agree on flag assignments
 --
@@ -430,14 +448,15 @@ verifyStanza (SN (PI qpn@(Q _pp pn) i) sn) = do
 -- equal.
 verifyFlag' :: FN PN -> LinkGroup -> UpdateState ()
 verifyFlag' (FN (PI pn i) fn) lg = do
-    vs <- get
-    let flags = map (\pp' -> FN (PI (Q pp' pn) i) fn) (S.toList (lgMembers lg))
-        vals  = map (`M.lookup` vsFlags vs) flags
-    if allEqual (catMaybes vals) -- We ignore not-yet assigned flags
-      then return ()
-      else conflict ( CS.fromList (map F flags) `CS.union` lgConflictSet lg
-                    , "flag " ++ show fn ++ " incompatible"
-                    )
+  vs <- get
+  let flags = map (\pp' -> FN (PI (Q pp' pn) i) fn) (S.toList (lgMembers lg))
+      vals  = map (`M.lookup`vsFlags vs) flags
+  if allEqual (catMaybes vals) -- We ignore not-yet assigned flags
+    then return ()
+    else conflict
+      (CS.fromList (map F flags) `CS.union` lgConflictSet lg, "flag "
+        ++ show fn
+        ++ " incompatible")
 
 -- | Verify that all packages in the link group agree on stanza assignments
 --
@@ -448,14 +467,15 @@ verifyFlag' (FN (PI pn i) fn) lg = do
 -- This function closely mirrors 'verifyFlag''.
 verifyStanza' :: SN PN -> LinkGroup -> UpdateState ()
 verifyStanza' (SN (PI pn i) sn) lg = do
-    vs <- get
-    let stanzas = map (\pp' -> SN (PI (Q pp' pn) i) sn) (S.toList (lgMembers lg))
-        vals    = map (`M.lookup` vsStanzas vs) stanzas
-    if allEqual (catMaybes vals) -- We ignore not-yet assigned stanzas
-      then return ()
-      else conflict ( CS.fromList (map S stanzas) `CS.union` lgConflictSet lg
-                    , "stanza " ++ show sn ++ " incompatible"
-                    )
+  vs <- get
+  let stanzas = map (\pp' -> SN (PI (Q pp' pn) i) sn) (S.toList (lgMembers lg))
+      vals    = map (`M.lookup`vsStanzas vs) stanzas
+  if allEqual (catMaybes vals) -- We ignore not-yet assigned stanzas
+    then return ()
+    else conflict
+      (CS.fromList (map S stanzas) `CS.union` lgConflictSet lg, "stanza "
+        ++ show sn
+        ++ " incompatible")
 
 {-------------------------------------------------------------------------------
   Link groups
@@ -496,10 +516,10 @@ lgInvariant :: Map QPN LinkGroup -> Bool
 lgInvariant links = all invGroup (M.elems links)
   where
     invGroup :: LinkGroup -> Bool
-    invGroup lg = allEqual $ map (`M.lookup` links) members
+    invGroup lg = allEqual $ map (`M.lookup`links) members
       where
         members :: [QPN]
-        members = map (`Q` lgPackage lg) $ S.toList (lgMembers lg)
+        members = map (`Q`lgPackage lg) $ S.toList (lgMembers lg)
 
 -- | Package version of this group
 --
@@ -509,57 +529,57 @@ lgInstance = fmap (\(PI _ i) -> i) . lgCanon
 
 showLinkGroup :: LinkGroup -> String
 showLinkGroup lg =
-    "{" ++ intercalate "," (map showMember (S.toList (lgMembers lg))) ++ "}"
+  "{" ++ intercalate "," (map showMember (S.toList (lgMembers lg))) ++ "}"
   where
     showMember :: PackagePath -> String
-    showMember pp = case lgCanon lg of
-                      Just (PI pp' _i) | pp == pp' -> "*"
-                      _otherwise                   -> ""
-                 ++ case lgInstance lg of
-                      Nothing -> showQPN (qpn pp)
-                      Just i  -> showPI (PI (qpn pp) i)
+    showMember pp =
+      case lgCanon lg of
+          Just (PI pp' _i) | pp == pp' -> "*"
+          _otherwise                   -> ""
+        ++ case lgInstance lg of
+             Nothing -> showQPN (qpn pp)
+             Just i  -> showPI (PI (qpn pp) i)
 
     qpn :: PackagePath -> QPN
     qpn pp = Q pp (lgPackage lg)
 
 -- | Creates a link group that contains a single member.
 lgSingleton :: QPN -> Maybe (PI PackagePath) -> LinkGroup
-lgSingleton (Q pp pn) canon = LinkGroup {
-      lgPackage = pn
-    , lgCanon   = canon
-    , lgMembers = S.singleton pp
-    , lgBlame   = CS.empty
-    }
+lgSingleton (Q pp pn) canon = LinkGroup
+  { lgPackage = pn
+  , lgCanon   = canon
+  , lgMembers = S.singleton pp
+  , lgBlame   = CS.empty
+  }
 
 lgMerge :: [Var QPN] -> LinkGroup -> LinkGroup -> Either Conflict LinkGroup
 lgMerge blame lg lg' = do
-    canon <- pick (lgCanon lg) (lgCanon lg')
-    return LinkGroup {
-        lgPackage = lgPackage lg
-      , lgCanon   = canon
-      , lgMembers = lgMembers lg `S.union` lgMembers lg'
-      , lgBlame   = CS.unions [CS.fromList blame, lgBlame lg, lgBlame lg']
-      }
+  canon <- pick (lgCanon lg) (lgCanon lg')
+  return LinkGroup
+    { lgPackage = lgPackage lg
+    , lgCanon   = canon
+    , lgMembers = lgMembers lg `S.union` lgMembers lg'
+    , lgBlame   = CS.unions [CS.fromList blame, lgBlame lg, lgBlame lg']
+    }
   where
     pick :: Eq a => Maybe a -> Maybe a -> Either Conflict (Maybe a)
     pick Nothing  Nothing  = Right Nothing
     pick (Just x) Nothing  = Right $ Just x
     pick Nothing  (Just y) = Right $ Just y
     pick (Just x) (Just y) =
-      if x == y then Right $ Just x
-                else Left ( CS.unions [
-                               CS.fromList blame
-                             , lgConflictSet lg
-                             , lgConflictSet lg'
-                             ]
-                          ,    "cannot merge " ++ showLinkGroup lg
-                            ++ " and " ++ showLinkGroup lg'
-                          )
+      if x == y
+      then
+        Right $ Just x
+      else
+        Left
+          (CS.unions [CS.fromList blame, lgConflictSet lg, lgConflictSet lg'], "cannot merge "
+            ++ showLinkGroup lg
+            ++ " and "
+            ++ showLinkGroup lg')
 
 lgConflictSet :: LinkGroup -> ConflictSet QPN
 lgConflictSet lg =
-               CS.fromList (map aux (S.toList (lgMembers lg)))
-    `CS.union` lgBlame lg
+  CS.fromList (map aux (S.toList (lgMembers lg))) `CS.union` lgBlame lg
   where
     aux pp = P (Q pp (lgPackage lg))
 
@@ -569,8 +589,8 @@ lgConflictSet lg =
 
 allEqual :: Eq a => [a] -> Bool
 allEqual []       = True
-allEqual [_]      = True
-allEqual (x:y:ys) = x == y && allEqual (y:ys)
+allEqual [_     ] = True
+allEqual (x:y:ys) = x == y && allEqual (y : ys)
 
 concatMapUnzip :: (a -> ([b], [c])) -> [a] -> ([b], [c])
 concatMapUnzip f = (\(xs, ys) -> (concat xs, concat ys)) . unzip . map f

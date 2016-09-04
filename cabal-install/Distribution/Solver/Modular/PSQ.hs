@@ -65,16 +65,20 @@ mapKeys :: (k1 -> k2) -> PSQ k1 v -> PSQ k2 v
 mapKeys f (PSQ xs) = PSQ (fmap (first f) xs)
 
 mapWithKey :: (k -> a -> b) -> PSQ k a -> PSQ k b
-mapWithKey f (PSQ xs) = PSQ (fmap (\ (k, v) -> (k, f k v)) xs)
+mapWithKey f (PSQ xs) = PSQ (fmap (\(k, v) -> (k, f k v)) xs)
 
 mapWithKeyState :: (s -> k -> a -> (b, s)) -> PSQ k a -> s -> PSQ k b
-mapWithKeyState p (PSQ xs) s0 =
-  PSQ (F.foldr (\ (k, v) r s -> case p s k v of
-                                  (w, n) -> (k, w) : (r n))
-               (const []) xs s0)
+mapWithKeyState p (PSQ xs) s0 = PSQ
+  ( F.foldr ( \(k, v) r s -> case p s k v of
+              (w, n) -> (k, w) : (r n)
+            )
+            (const [])
+            xs
+            s0
+  )
 
 delete :: Eq k => k -> PSQ k a -> PSQ k a
-delete k (PSQ xs) = PSQ (snd (S.partition ((== k) . fst) xs))
+delete k (PSQ xs) = PSQ (snd (S.partition ((==k) . fst) xs))
 
 fromList :: [(k, a)] -> PSQ k a
 fromList = PSQ
@@ -86,17 +90,15 @@ snoc :: PSQ k a -> k -> a -> PSQ k a
 snoc (PSQ xs) k x = PSQ (xs ++ [(k, x)])
 
 casePSQ :: PSQ k a -> r -> (k -> a -> PSQ k a -> r) -> r
-casePSQ (PSQ xs) n c =
-  case xs of
-    []          -> n
-    (k, v) : ys -> c k v (PSQ ys)
+casePSQ (PSQ xs) n c = case xs of
+  []        -> n
+  (k, v):ys -> c k v (PSQ ys)
 
 splits :: PSQ k a -> PSQ k (a, PSQ k a)
 splits = go id
   where
-    go f xs = casePSQ xs
-        (PSQ [])
-        (\ k v ys -> cons k (v, f ys) (go (f . cons k v) ys))
+    go f xs =
+      casePSQ xs (PSQ []) (\k v ys -> cons k (v, f ys) (go (f . cons k v) ys))
 
 sortBy :: (a -> a -> Ordering) -> PSQ k a -> PSQ k a
 sortBy cmp (PSQ xs) = PSQ (S.sortBy (cmp `on` snd) xs)
@@ -113,12 +115,12 @@ sortByKeys cmp (PSQ xs) = PSQ (S.sortBy (cmp `on` fst) xs)
 -- empty, then we return an empty queue again).
 --
 dminimumBy :: (a -> Degree) -> PSQ k a -> PSQ k a
-dminimumBy _   (PSQ [])       = PSQ []
-dminimumBy sel (PSQ (x : xs)) = go (sel (snd x)) x xs
+dminimumBy _   (PSQ []    ) = PSQ []
+dminimumBy sel (PSQ (x:xs)) = go (sel (snd x)) x xs
   where
-    go ZeroOrOne v _ = PSQ [v]
-    go _ v []        = PSQ [v]
-    go c v (y : ys)  = case compare c d of
+    go ZeroOrOne v _      = PSQ [v]
+    go _         v []     = PSQ [v]
+    go c         v (y:ys) = case compare c d of
       LT -> go c v ys
       EQ -> go c v ys
       GT -> go d y ys
@@ -126,12 +128,11 @@ dminimumBy sel (PSQ (x : xs)) = go (sel (snd x)) x xs
         d = sel (snd y)
 
 maximumBy :: (k -> Int) -> PSQ k a -> (k, a)
-maximumBy sel (PSQ xs) =
-  S.minimumBy (flip (comparing (sel . fst))) xs
+maximumBy sel (PSQ xs) = S.minimumBy (flip (comparing (sel . fst))) xs
 
 minimumBy :: (a -> Int) -> PSQ k a -> PSQ k a
 minimumBy sel (PSQ xs) =
-  PSQ [snd (S.minimumBy (comparing fst) (S.map (\ x -> (sel (snd x), x)) xs))]
+  PSQ [snd (S.minimumBy (comparing fst) (S.map (\x -> (sel (snd x), x)) xs))]
 
 -- | Will partition the list according to the predicate. If
 -- there is any element that satisfies the precidate, then only
@@ -140,29 +141,23 @@ minimumBy sel (PSQ xs) =
 --
 prefer :: (a -> Bool) -> PSQ k a -> PSQ k a
 prefer p (PSQ xs) =
-  let
-    (pro, con) = S.partition (p . snd) xs
-  in
-    if S.null pro then PSQ con else PSQ pro
+  let (pro, con) = S.partition (p . snd) xs
+  in  if S.null pro then PSQ con else PSQ pro
 
 -- | Variant of 'prefer' that takes a continuation for the case
 -- that there are none of the desired elements.
 preferOrElse :: (a -> Bool) -> (PSQ k a -> PSQ k a) -> PSQ k a -> PSQ k a
 preferOrElse p k (PSQ xs) =
-  let
-    (pro, con) = S.partition (p . snd) xs
-  in
-    if S.null pro then k (PSQ con) else PSQ pro
+  let (pro, con) = S.partition (p . snd) xs
+  in  if S.null pro then k (PSQ con) else PSQ pro
 
 -- | Variant of 'prefer' that takes a predicate on the keys
 -- rather than on the values.
 --
 preferByKeys :: (k -> Bool) -> PSQ k a -> PSQ k a
 preferByKeys p (PSQ xs) =
-  let
-    (pro, con) = S.partition (p . fst) xs
-  in
-    if S.null pro then PSQ con else PSQ pro
+  let (pro, con) = S.partition (p . fst) xs
+  in  if S.null pro then PSQ con else PSQ pro
 
 filterKeys :: (k -> Bool) -> PSQ k a -> PSQ k a
 filterKeys p (PSQ xs) = PSQ (S.filter (p . fst) xs)
@@ -194,22 +189,22 @@ instance Ord Degree where
   compare Other     Other     = EQ
 
 degree :: PSQ k a -> Degree
-degree (PSQ [])     = ZeroOrOne
-degree (PSQ [_])    = ZeroOrOne
+degree (PSQ []    ) = ZeroOrOne
+degree (PSQ [_]   ) = ZeroOrOne
 degree (PSQ [_, _]) = Two
-degree (PSQ _)      = Other
+degree (PSQ _     ) = Other
 
 null :: PSQ k a -> Bool
 null (PSQ xs) = S.null xs
 
 isZeroOrOne :: PSQ k a -> Bool
-isZeroOrOne (PSQ [])  = True
+isZeroOrOne (PSQ [] ) = True
 isZeroOrOne (PSQ [_]) = True
 isZeroOrOne _         = False
 
 firstOnly :: PSQ k a -> PSQ k a
-firstOnly (PSQ [])      = PSQ []
-firstOnly (PSQ (x : _)) = PSQ [x]
+firstOnly (PSQ []   ) = PSQ []
+firstOnly (PSQ (x:_)) = PSQ [x]
 
 toList :: PSQ k a -> [(k, a)]
 toList (PSQ xs) = xs

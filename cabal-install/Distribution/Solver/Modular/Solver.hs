@@ -87,54 +87,63 @@ data SolverConfig = SolverConfig {
 -- seems to be no statistically significant performance impact of cycle
 -- detection in the common case where there are no cycles.
 --
-solve :: SolverConfig                         -- ^ solver parameters
-      -> CompilerInfo
-      -> Index                                -- ^ all available packages as an index
-      -> PkgConfigDb                          -- ^ available pkg-config pkgs
-      -> (PN -> PackagePreferences)           -- ^ preferences
-      -> Map PN [LabeledPackageConstraint]    -- ^ global constraints
-      -> [PN]                                 -- ^ global goals
-      -> Log Message (Assignment, RevDepMap)
+solve
+  :: SolverConfig                         -- ^ solver parameters
+  -> CompilerInfo
+  -> Index                                -- ^ all available packages as an index
+  -> PkgConfigDb                          -- ^ available pkg-config pkgs
+  -> (PN -> PackagePreferences)           -- ^ preferences
+  -> Map PN [LabeledPackageConstraint]    -- ^ global constraints
+  -> [PN]                                 -- ^ global goals
+  -> Log Message (Assignment, RevDepMap)
 solve sc cinfo idx pkgConfigDB userPrefs userConstraints userGoals =
-  explorePhase     $
-  detectCycles     $
-  heuristicsPhase  $
-  preferencesPhase $
-  validationPhase  $
-  prunePhase       $
-  buildPhase
+  explorePhase
+    $ detectCycles
+    $ heuristicsPhase
+    $ preferencesPhase
+    $ validationPhase
+    $ prunePhase
+    $ buildPhase
   where
-    explorePhase     = backjumpAndExplore (enableBackjumping sc) (countConflicts sc)
-    detectCycles     = traceTree "cycles.json" id . detectCyclesPhase
-    heuristicsPhase  =
+    explorePhase = backjumpAndExplore (enableBackjumping sc) (countConflicts sc)
+    detectCycles = traceTree "cycles.json" id . detectCyclesPhase
+    heuristicsPhase =
       let heuristicsTree = traceTree "heuristics.json" id
-      in case goalOrder sc of
-           Nothing -> goalChoiceHeuristics .
-                      heuristicsTree .
-                      P.deferWeakFlagChoices .
-                      P.deferSetupChoices .
-                      P.preferBaseGoalChoice
-           Just order -> P.firstGoal .
-                         heuristicsTree .
-                         P.sortGoals order
-    preferencesPhase = P.preferLinked .
-                       P.preferPackagePreferences userPrefs
-    validationPhase  = traceTree "validated.json" id .
-                       P.enforceManualFlags . -- can only be done after user constraints
-                       P.enforcePackageConstraints userConstraints .
-                       P.enforceSingleInstanceRestriction .
-                       validateLinking idx .
-                       validateTree cinfo idx pkgConfigDB
-    prunePhase       = (if asBool (avoidReinstalls sc) then P.avoidReinstalls (const True) else id) .
+      in  case goalOrder sc of
+            Nothing ->
+              goalChoiceHeuristics
+                . heuristicsTree
+                . P.deferWeakFlagChoices
+                . P.deferSetupChoices
+                . P.preferBaseGoalChoice
+            Just order -> P.firstGoal . heuristicsTree . P.sortGoals order
+    preferencesPhase = P.preferLinked . P.preferPackagePreferences userPrefs
+    validationPhase =
+      traceTree "validated.json" id
+        . P.enforceManualFlags
+        . -- can only be done after user constraints
+          P.enforcePackageConstraints userConstraints
+        . P.enforceSingleInstanceRestriction
+        . validateLinking idx
+        . validateTree cinfo idx pkgConfigDB
+    prunePhase =
+      ( if asBool (avoidReinstalls sc)
+          then P.avoidReinstalls (const True)
+          else id
+        )
+        .
                        -- packages that can never be "upgraded":
-                       P.requireInstalled (`elem` [ PackageName "base"
-                                                  , PackageName "ghc-prim"
-                                                  , PackageName "integer-gmp"
-                                                  , PackageName "integer-simple"
-                                                  ])
-    buildPhase       = traceTree "build.json" id
-                     $ addLinking
-                     $ buildTree idx (independentGoals sc) userGoals
+          P.requireInstalled
+            ( `elem`[ PackageName "base"
+                    , PackageName "ghc-prim"
+                    , PackageName "integer-gmp"
+                    , PackageName "integer-simple"
+                    ]
+            )
+    buildPhase = traceTree "build.json" id $ addLinking $ buildTree
+      idx
+      (independentGoals sc)
+      userGoals
 
     -- Counting conflicts and reordering goals interferes, as both are strategies to
     -- change the order of goals.
@@ -160,21 +169,26 @@ solve sc cinfo idx pkgConfigDB userPrefs userConstraints userGoals =
     -- Otherwise, we simply choose the first remaining goal.
     --
     goalChoiceHeuristics
-      | asBool (reorderGoals sc) && asBool (countConflicts sc) = P.preferReallyEasyGoalChoices
-      | asBool (reorderGoals sc)                               = P.preferEasyGoalChoices
-      | otherwise                                              = id {- P.firstGoal -}
+      | asBool (reorderGoals sc) && asBool (countConflicts sc)
+      = P.preferReallyEasyGoalChoices
+      | asBool (reorderGoals sc)
+      = P.preferEasyGoalChoices
+      | otherwise
+      = id {- P.firstGoal -}
 
 -- | Dump solver tree to a file (in debugging mode)
 --
 -- This only does something if the @debug-tracetree@ configure argument was
 -- given; otherwise this is just the identity function.
-traceTree ::
+traceTree
+  :: 
 #ifdef DEBUG_TRACETREE
   GSimpleTree a =>
 #endif
      FilePath  -- ^ Output file
   -> (a -> a)  -- ^ Function to summarize the tree before dumping
-  -> a -> a
+  -> a
+  -> a
 #ifdef DEBUG_TRACETREE
 traceTree = gtraceJson
 #else
@@ -227,20 +241,24 @@ instance GSimpleTree (Tree QGoalReason) where
 _removeGR :: Tree QGoalReason -> Tree QGoalReason
 _removeGR = trav go
   where
-   go :: TreeF QGoalReason (Tree QGoalReason) -> TreeF QGoalReason (Tree QGoalReason)
-   go (PChoiceF qpn _     psq) = PChoiceF qpn dummy     psq
-   go (FChoiceF qfn _ a b psq) = FChoiceF qfn dummy a b psq
-   go (SChoiceF qsn _ a   psq) = SChoiceF qsn dummy a   psq
-   go (GoalChoiceF        psq) = GoalChoiceF            (goG psq)
-   go (DoneF rdm)              = DoneF rdm
-   go (FailF cs reason)        = FailF cs reason
+    go
+      :: TreeF QGoalReason (Tree QGoalReason)
+      -> TreeF QGoalReason (Tree QGoalReason)
+    go (PChoiceF qpn _ psq    ) = PChoiceF qpn dummy psq
+    go (FChoiceF qfn _ a b psq) = FChoiceF qfn dummy a b psq
+    go (SChoiceF qsn _ a psq  ) = SChoiceF qsn dummy a psq
+    go (GoalChoiceF psq       ) = GoalChoiceF (goG psq)
+    go (DoneF       rdm       ) = DoneF rdm
+    go (FailF cs reason       ) = FailF cs reason
 
-   goG :: PSQ (Goal QPN) (Tree QGoalReason) -> PSQ (Goal QPN) (Tree QGoalReason)
-   goG = PSQ.fromList
-       . L.map (\(Goal var _, subtree) -> (Goal var dummy, subtree))
-       . PSQ.toList
+    goG
+      :: PSQ (Goal QPN) (Tree QGoalReason) -> PSQ (Goal QPN) (Tree QGoalReason)
+    goG =
+      PSQ.fromList
+        . L.map (\(Goal var _, subtree) -> (Goal var dummy, subtree))
+        . PSQ.toList
 
-   dummy :: QGoalReason
-   dummy = PDependency
-         $ PI (Q (PackagePath DefaultNamespace Unqualified) (PackageName "$"))
-              (I (Version [1] []) InRepo)
+    dummy :: QGoalReason
+    dummy = PDependency $ PI
+      (Q (PackagePath DefaultNamespace Unqualified) (PackageName "$"))
+      (I (Version [1] []) InRepo)
